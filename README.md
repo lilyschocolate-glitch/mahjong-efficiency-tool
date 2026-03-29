@@ -71,3 +71,6 @@ export default defineConfig([
   },
 ])
 ```
+
+
+Deployed with GitHub Actions.
