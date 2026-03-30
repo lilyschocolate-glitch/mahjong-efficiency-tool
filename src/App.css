@@ -1,14 +1,13 @@
-:root {
-  --primary-color: #2c3e50;
-  --secondary-color: #34495e;
-  --accent-color: #e74c3c;
-  --text-color: #ecf0f1;
-  --bg-color: #0f172a;
-  --panel-bg: rgba(30, 41, 59, 0.7);
+  --primary-color: #1e293b;
+  --secondary-color: #334155;
+  --accent-color: #f59e0b;
+  --text-color: #f8fafc;
+  --bg-color: #020617;
+  --panel-bg: rgba(15, 23, 42, 0.6);
   --tenpai-color: #10b981;
-  --win-color: #ef4444;
-  --gold-gradient: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
-  --blue-gradient: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+  --win-color: #f43f5e;
+  --gold-gradient: linear-gradient(135deg, #fbbf24 0%, #d97706 100%);
+  --blue-gradient: linear-gradient(135deg, #60a5fa 0%, #2563eb 100%);
 }
 
 body {
@@ -233,11 +232,11 @@ header p {
 }
 
 .mini-yaku {
-  font-size: 0.7rem;
-  background: rgba(255, 255, 255, 0.05);
-  padding: 1px 6px;
-  border-radius: 4px;
-  color: #94a3b8;
+  font-size: 0.75rem;
+  background: rgba(255, 255, 255, 0.1);
+  padding: 2px 8px;
+  border-radius: 6px;
+  color: #cbd5e1;
 }
 
 /* Win Score Hero */
@@ -415,37 +414,40 @@ header p {
 /* Tile Display */
 .hand-display {
   display: flex;
-  flex-wrap: nowrap;
-  gap: 2px;
+  flex-wrap: wrap; /* 2行以上に折り返し可能にする */
+  gap: 6px;
   justify-content: center;
-  min-height: 81px;
-  padding: 10px;
-  background: rgba(0, 0, 0, 0.2);
-  border-radius: 12px;
-  margin: 10px 0;
-  overflow: hidden;
-  box-shadow: inset 0 0 20px rgba(0, 0, 0, 0.3);
+  min-height: 100px;
+  padding: 20px 10px;
+  background: rgba(0, 0, 0, 0.4);
+  border-radius: 20px;
+  margin: 15px 0;
+  box-shadow: inset 0 4px 20px rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(5px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 .hand-display .mahjong-tile {
-  flex-shrink: 1;
-  min-width: 0;
+  flex-shrink: 0;
+  width: 50px; /* PCでは少し大きめ */
+  height: 68px;
 }
 
 .tile {
-  width: 60px;
-  height: 81px;
+  width: 50px;
+  height: 68px;
   border-radius: 8px;
 }
 
 .tile-empty {
   background: rgba(255, 255, 255, 0.05);
   border: 2px dashed rgba(255, 255, 255, 0.1);
-  transition: background 0.3s;
+  transition: all 0.3s;
 }
 
 .tile-empty:hover {
-  background: rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.1);
+  border-color: var(--accent-color);
 }
 
 /* Tile Picker Layout */
@@ -562,53 +564,64 @@ header p {
   font-size: 0.9rem;
 }
 
-/* Camera Live Bar Enhancements */
-.live-analysis-bar {
-  background: rgba(15, 23, 42, 0.9);
-  padding: 15px 20px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+/* Camera Overlay with Overflow Fix */
+.camera-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100dvh; /* dynamic viewport height */
+  background: #000;
+  z-index: 2000;
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  backdrop-filter: blur(8px);
 }
 
-.live-analysis-bar.tenpai {
-  background: rgba(16, 185, 129, 0.2);
-  border-bottom: 2px solid #10b981;
-}
-
-.live-analysis-bar.win {
-  background: rgba(239, 68, 68, 0.2);
-  border-bottom: 2px solid #ef4444;
-}
-
-.live-shanten-text {
-  font-size: 1.5rem;
-  font-weight: 900;
-  letter-spacing: 1px;
-}
-
-.live-waits-row {
+.video-wrapper {
+  position: relative;
+  flex: 1;
+  width: 100%;
+  overflow: hidden;
   display: flex;
   align-items: center;
-  gap: 10px;
+  justify-content: center;
+  background: #000;
 }
 
-.mini-tiles-scroll {
+video {
+  width: 100%;
+  height: 100%;
+  object-fit: contain; /* はみ出し防止 */
+}
+
+.camera-controls {
+  padding: 20px;
+  background: rgba(15, 23, 42, 0.95);
+  backdrop-filter: blur(10px);
   display: flex;
-  gap: 4px;
-  overflow-x: auto;
-  scrollbar-width: none; /* Firefox */
-}
-.mini-tiles-scroll::-webkit-scrollbar {
-  display: none; /* Chrome, Safari */
+  justify-content: space-between;
+  align-items: center;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
 }
 
-.live-score-preview {
-  font-size: 1.2rem;
+.camera-btn {
+  padding: 12px 24px;
+  border-radius: 50px;
   font-weight: 800;
-  color: #f59e0b;
+  cursor: pointer;
+  border: none;
+  transition: all 0.2s;
+}
+
+.confirm-btn {
+  background: var(--gold-gradient);
+  color: #000;
+  box-shadow: 0 4px 15px rgba(245, 158, 11, 0.3);
+}
+
+.close-btn {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
 }
 
 /* Settings Section */
@@ -757,23 +770,18 @@ header p {
   }
 
   .hand-display {
-    padding: 8px 4px;
-    gap: 1.5px;
+    padding: 15px 10px;
+    gap: 8px;
     display: flex;
-    flex-wrap: nowrap;
-    overflow: hidden;
+    flex-wrap: wrap; /* スマホで確実に折り返す */
     justify-content: center;
-    background: rgba(0, 0, 0, 0.4);
-    border-radius: 8px;
     width: 100%;
-    max-width: 100%;
     box-sizing: border-box;
   }
 
   .hand-display .mahjong-tile {
-    flex: 0 1 auto;
-    min-width: 0;
-    max-width: calc(100% / 14.5);
+    width: 60px; /* スマホでは逆に大きくする！ (2行にするから余裕がある) */
+    height: 81px;
   }
 
   .hand-display .mahjong-tile svg {
@@ -902,4 +910,106 @@ header p {
     margin: 0;
     border-radius: 0;
   }
+}
+
+/* 累積スキャンのための追加スタイル */
+.buffered-tiles-preview {
+  width: 100%;
+  padding: 12px 20px;
+  background: rgba(2, 6, 23, 0.8);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.section-header .label {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.text-btn {
+  background: none;
+  border: none;
+  color: #f43f5e;
+  font-size: 0.75rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.mini-tile-wrapper {
+  position: relative;
+  cursor: pointer;
+  transition: transform 0.2s;
+}
+
+.mini-tile-wrapper::after {
+  content: "✕";
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  background: #f43f5e;
+  color: white;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  font-size: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.mini-tile-wrapper:hover::after {
+  opacity: 1;
+}
+
+.mini-tile-empty {
+  width: 24px;
+  height: 32px;
+  border: 1px dashed rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+
+.live-detection-tray {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  padding: 10px 20px;
+  background: rgba(15, 23, 42, 0.4);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.add-btn {
+  background: #22c55e;
+  color: white;
+  padding: 8px 18px;
+  border-radius: 8px;
+  font-weight: 700;
+  font-size: 0.9rem;
+  white-space: nowrap;
+}
+
+.add-btn:active {
+  transform: scale(0.95);
+}
+
+.add-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.detecting-text {
+  font-size: 0.8rem;
+  color: #475569;
+  font-style: italic;
 }

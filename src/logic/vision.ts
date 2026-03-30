@@ -218,7 +218,24 @@ class TileRecognizer {
 
       // スコアを算出（1.0に近いほど正確）
       const confidence = Math.max(0, 1 - (minCombinedError / 1.2));
-      
+
+      // 赤ドラ（赤五）判定
+      if (bestTileCandidate && ['m5', 'p5', 's5'].includes(bestTileCandidate as string) && confidence > 0.4) {
+        // クロップされた画像の中央付近に強い赤色があるかチェック
+        const redMask = cropped.slice([16, 16], [32, 32]).unstack(2)[0]; // Rチャネル
+        const blueMask = cropped.slice([16, 16], [32, 32]).unstack(2)[2]; // Bチャネル
+        
+        // 赤が青より明らかに強いピクセルの割合
+        const isRed = tf.logicalAnd(
+          redMask.greater(tf.scalar(0.6)), // Rが一定以上
+          redMask.greater(blueMask.mul(tf.scalar(1.5))) // RがBの1.5倍以上
+        ).mean().dataSync()[0];
+
+        if (isRed > 0.05) { // 5%以上の領域が赤ければ、赤ドラとみなす
+          bestTileCandidate = (bestTileCandidate as string).replace('5', '0') as Tile;
+        }
+      }
+
       if (bestTileCandidate && confidence > 0.4) {
         return { tile: bestTileCandidate, confidence };
       }

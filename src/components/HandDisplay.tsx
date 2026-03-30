@@ -9,16 +9,16 @@ interface Props {
 
 const HandDisplay: React.FC<Props> = ({ hand, onTileRemove }) => {
   return (
-    <div className="hand-display">
+    <div className={`hand-display ${hand.length > 7 ? 'multi-row' : ''}`}>
       {hand.map((tile, index) => (
         <MahjongTile
           key={`${tile}-${index}`}
           tile={tile}
-          size="medium"
+          size="large"
           onClick={() => onTileRemove(index)}
         />
       ))}
-      {Array.from({ length: 14 - hand.length }, (_, i) => (
+      {Array.from({ length: Math.max(0, 14 - hand.length) }, (_, i) => (
         <div key={`empty-${i}`} className="tile tile-empty"></div>
       ))}
     </div>

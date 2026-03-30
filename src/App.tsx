@@ -57,15 +57,15 @@ function App() {
   const onCapture = (imageSrc: string) => {
     setCapturedImage(imageSrc);
     setShowCamera(false);
-    alert("画像をキャプチャしました。AI認識機能は次のフェーズで実装予定です。");
   };
 
   const onDetectedTiles = (newTiles: string[]) => {
-    const combined = [...hand, ...newTiles as Tile[]].slice(0, 14).sort((a, b) => {
+    // 認識した牌セットで現在の牌を置き換える
+    const sortedTiles = [...(newTiles as Tile[])].sort((a, b) => {
       if (a[0] !== b[0]) return a[0].localeCompare(b[0]);
       return a[1].localeCompare(b[1]);
     });
-    setHand(combined);
+    setHand(sortedTiles);
     setShowCamera(false);
   };
 

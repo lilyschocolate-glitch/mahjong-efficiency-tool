@@ -66,13 +66,33 @@ const CameraCapture: React.FC<Props> = ({ onCapture, onDetectedTiles, onClose, d
     }
   };
 
-  const handleAddDetected = () => {
-    const tiles = results.map(r => r.tile);
-    if (tiles.length > 0) {
-      onDetectedTiles(tiles);
+  const [bufferedTiles, setBufferedTiles] = useState<Tile[]>([]);
+
+  const handleAddToBuffer = () => {
+    const newTiles = results.map(r => r.tile as Tile);
+    setBufferedTiles(prev => {
+      const combined = [...prev, ...newTiles].slice(0, 14);
+      return combined.sort((a, b) => {
+        if (a[0] !== b[0]) return a[0].localeCompare(b[0]);
+        return a[1].localeCompare(b[1]);
+      });
+    });
+  };
+
+  const clearBuffer = () => setBufferedTiles([]);
+
+  const handleConfirm = () => {
+    if (bufferedTiles.length > 0) {
+      onDetectedTiles(bufferedTiles);
+    } else if (results.length > 0) {
+      onDetectedTiles(results.map(r => r.tile));
     }
   };
 
+  const handleRemoveBuffered = (idx: number) => {
+    setBufferedTiles(prev => prev.filter((_, i) => i !== idx));
+  };
+  
   // Initialize recognizer
   useEffect(() => {
     const init = async () => {
@@ -252,28 +272,55 @@ const CameraCapture: React.FC<Props> = ({ onCapture, onDetectedTiles, onClose, d
         </div>
 
         <div className="camera-controls">
-          <div className="detection-info">
-            {results.length > 0 ? (
-              <p>{results.length} 個の牌を検出しました</p>
-            ) : (
-              <p>牌を探しています...</p>
-            )}
+          {/* 累積された牌のプレビュー */}
+          <div className="buffered-tiles-preview">
+            <div className="section-header">
+              <span className="label">スキャン済み: {bufferedTiles.length}/14枚</span>
+              {bufferedTiles.length > 0 && <button className="text-btn" onClick={clearBuffer}>クリア</button>}
+            </div>
+            <div className="mini-tiles-row">
+              {bufferedTiles.map((tile, i) => (
+                <div key={`${tile}-${i}`} className="mini-tile-wrapper" onClick={() => handleRemoveBuffered(i)}>
+                  <MahjongTile tile={tile} size="small" />
+                </div>
+              ))}
+              {[...Array(Math.max(0, 14 - bufferedTiles.length))].map((_, i) => (
+                <div key={`empty-${i}`} className="mini-tile-empty" />
+              ))}
+            </div>
           </div>
-          <div className="btn-group">
-            <button className="capture-btn" onClick={capture} disabled={!isActive}>
-              <div className="inner-circle"></div>
+          
+          <div className="live-detection-tray">
+            <div className="detection-scroll-preview">
+              {results.length > 0 ? (
+                <div className="mini-tiles-row">
+                  {results.map((r, i) => (
+                    <MahjongTile key={i} tile={r.tile as Tile} size="small" />
+                  ))}
+                </div>
+              ) : (
+                <p className="detecting-text">スキャン中...</p>
+              )}
+            </div>
+            <button 
+              className="cam-btn add-btn" 
+              onClick={handleAddToBuffer}
+              disabled={results.length === 0 || bufferedTiles.length >= 14}
+            >
+              追加
             </button>
-            {results.length > 0 && (
-              <button className="add-tiles-btn" onClick={handleAddDetected}>
-                検出した牌を追加
-              </button>
-            )}
           </div>
-          <p className="hint">
-            <strong>【認識のコツ】</strong><br />
-            牌の真上から、水平に並んだ状態でかざしてください。<br />
-            反射を抑え、明るい場所で撮影すると精度が上がります。
-          </p>
+          
+          <div className="action-buttons">
+            <button className="cam-btn cancel-btn" onClick={() => { stopCamera(); onClose(); }}>閉じる</button>
+            <button 
+              className="cam-btn confirm-btn" 
+              onClick={handleConfirm}
+              disabled={bufferedTiles.length === 0 && results.length === 0}
+            >
+              {bufferedTiles.length > 0 ? `解析を開始 (${bufferedTiles.length}枚)` : '現在の牌で解析'}
+            </button>
+          </div>
         </div>
         
         <canvas ref={canvasRef} style={{ display: 'none' }} />
