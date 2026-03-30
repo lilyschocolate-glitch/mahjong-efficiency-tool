@@ -8,13 +8,12 @@ import type { ScoreResult } from '../logic/scoring';
 import MahjongTile from './MahjongTile';
 
 interface Props {
-  onCapture: (imageSrc: string) => void;
   onDetectedTiles: (tiles: string[]) => void;
   onClose: () => void;
   dora?: Tile[];
 }
 
-const CameraCapture: React.FC<Props> = ({ onCapture, onDetectedTiles, onClose, dora = [] }) => {
+const CameraCapture: React.FC<Props> = ({ onDetectedTiles, onClose, dora = [] }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const overlayRef = useRef<HTMLCanvasElement>(null);

@@ -54,10 +54,6 @@ function App() {
     setHand(prev => prev.filter((_, i) => i !== index));
   };
 
-  const onCapture = (imageSrc: string) => {
-    setCapturedImage(imageSrc);
-    setShowCamera(false);
-  };
 
   const onDetectedTiles = (newTiles: string[]) => {
     // 認識した牌セットで現在の牌を置き換える
@@ -163,7 +159,6 @@ function App() {
 
         {showCamera && (
           <CameraCapture 
-            onCapture={onCapture} 
             onDetectedTiles={onDetectedTiles}
             onClose={() => setShowCamera(false)} 
             dora={dora}
