@@ -281,10 +281,16 @@ const CameraCapture: React.FC<Props> = ({ onDetectedTiles, onClose, dora = [] })
           </div>
 
           {error && <div className="camera-error">{error}</div>}
-          {(isInitializing || !isActive) && !error && (
+          {isInitializing && !error && (
             <div className="loading-overlay">
               <div className="spinner"></div>
-              <span>AIモデルを読み込み中...</span>
+              <span>AIモデル(COCO-SSD)を読み込み中...</span>
+            </div>
+          )}
+          {!isInitializing && isActive && (
+            <div className="debug-status-badge">
+              <span className="dot active"></span> 
+              AI稼働中 (候補: {results.length})
             </div>
           )}
         </div>

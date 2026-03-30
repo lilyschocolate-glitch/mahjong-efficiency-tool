@@ -79,7 +79,7 @@ class TileRecognizer {
     const seenBoxes: [number, number, number, number][] = [];
 
     for (const pred of predictions) {
-      if (pred.score < 0.15) continue;
+      if (pred.score < 0.10) continue; // しきい値を引き下げて検出しやすく
 
       const [x, y, w, h] = pred.bbox;
       const ratio = w / h;
@@ -91,7 +91,7 @@ class TileRecognizer {
 
       const classified = await this.classify(videoElement, x, y, w, h);
       
-      if (classified && classified.confidence > 0.4) {
+      if (classified && classified.confidence > 0.3) { // しきい値を引き下げ
         results.push({
           tile: classified.tile,
           confidence: classified.confidence,
@@ -216,8 +216,8 @@ class TileRecognizer {
         }
       });
 
-      // スコアを算出（1.0に近いほど正確）
-      const confidence = Math.max(0, 1 - (minCombinedError / 1.2));
+      // スコアを算出（1.0に近いほど正確）。分母を広げてスコアを甘くする。
+      const confidence = Math.max(0, 1 - (minCombinedError / 1.5));
 
       // 赤ドラ（赤五）判定
       if (bestTileCandidate && ['m5', 'p5', 's5'].includes(bestTileCandidate as string) && confidence > 0.4) {
