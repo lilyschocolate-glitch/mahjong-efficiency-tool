@@ -112,21 +112,25 @@ const CameraCapture: React.FC<Props> = ({ onDetectedTiles, onClose, dora = [] })
     return () => cancelAnimationFrame(animationId);
   }, [isActive, isInitializing]);
 
-  // Live Analysis Logic
+  // Live Analysis Logic based on Buffer + Current Results
   useEffect(() => {
-    if (results.length >= 1) {
-      const tiles = results.map((r: RecognitionResult) => r.tile as Tile);
-      const s = calculateShanten(tiles);
+    // バッファと現在認識中を合算
+    const currentLiveTiles = results.map((r: RecognitionResult) => r.tile as Tile);
+    const combinedTiles = [...bufferedTiles, ...currentLiveTiles].slice(0, 14);
+
+    if (combinedTiles.length >= 1) {
+      const s = calculateShanten(combinedTiles);
       setLiveShanten(s);
 
-      if (s === -1 && tiles.length === 14) {
-        setLiveScore(calculateScore(tiles, dora));
+      if (s === -1 && combinedTiles.length === 14) {
+        setLiveScore(calculateScore(combinedTiles, dora));
       } else {
         setLiveScore(null);
       }
 
-      if (tiles.length === 13 || tiles.length === 14) {
-        const acc = getAcceptance(tiles.slice(0, 13));
+      // 13枚または14枚の時に有効牌/待ちを表示
+      if (combinedTiles.length === 13 || combinedTiles.length === 14) {
+        const acc = getAcceptance(combinedTiles.slice(0, 13));
         setLiveAcceptance(acc);
       } else {
         setLiveAcceptance([]);
@@ -135,7 +139,7 @@ const CameraCapture: React.FC<Props> = ({ onDetectedTiles, onClose, dora = [] })
       setLiveShanten(null);
       setLiveAcceptance([]);
     }
-  }, [results]);
+  }, [results, bufferedTiles, dora]);
 
   const drawOverlay = (detections: RecognitionResult[]) => {
     if (!overlayRef.current || !videoRef.current) return;
@@ -229,14 +233,16 @@ const CameraCapture: React.FC<Props> = ({ onDetectedTiles, onClose, dora = [] })
               <span className="live-shanten-text">
                 {liveShanten === -1 ? '🀄 和了！' : liveShanten === 0 ? '🔥 聴牌（テンパイ）！' : `${liveShanten}向聴`}
               </span>
+              <span className="live-count-badge">{bufferedTiles.length + results.length > 14 ? 14 : bufferedTiles.length + results.length}/14枚</span>
             </div>
             {liveAcceptance.length > 0 && liveShanten !== -1 && (
               <div className="live-waits-row">
-                <span className="label">{liveShanten <= 0 ? '待ち:' : '有効:'}</span>
+                <span className="label">{liveShanten <= 0 ? '待ち:' : '次の一手:'}</span>
                 <div className="mini-tiles-scroll">
-                  {liveAcceptance.map(a => (
+                  {liveAcceptance.slice(0, 8).map(a => (
                     <MahjongTile key={a.tile} tile={a.tile} size="small" className="mini-tile" />
                   ))}
+                  {liveAcceptance.length > 8 && <span className="more-waits">...</span>}
                 </div>
               </div>
             )}
@@ -251,6 +257,19 @@ const CameraCapture: React.FC<Props> = ({ onDetectedTiles, onClose, dora = [] })
         <div className="video-wrapper">
           <video ref={videoRef} autoPlay playsInline muted />
           <canvas ref={overlayRef} className="detection-overlay" />
+          
+          {/* 14枚揃った時のオーバーレイ通知 */}
+          {bufferedTiles.length === 14 && (
+            <div className="completion-overlay">
+              <div className="completion-card">
+                <div className="check-icon">✓</div>
+                <h4>14枚スキャン完了！</h4>
+                <p>手牌がすべて揃いました。解析を開始しますか？</p>
+                <button className="big-confirm-btn" onClick={handleConfirm}>解析結果を見る</button>
+                <button className="retry-btn" onClick={clearBuffer}>やり直す</button>
+              </div>
+            </div>
+          )}
           
           {/* 撮影ガイド枠 */}
           <div className="camera-guide-frame">

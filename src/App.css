@@ -1028,6 +1028,137 @@ video {
   border-bottom: 1px solid rgba(255, 255, 255, 0.05);
 }
 
+/* スキャン完了時のオーバーレイ */
+.completion-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(2, 6, 23, 0.7);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 200;
+  animation: fadeIn 0.3s ease-out;
+}
+
+.completion-card {
+  background: #0f172a;
+  padding: 30px;
+  border-radius: 24px;
+  text-align: center;
+  max-width: 80%;
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
+}
+
+.check-icon {
+  width: 60px;
+  height: 60px;
+  background: #10b981;
+  color: white;
+  font-size: 30px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 20px;
+  box-shadow: 0 0 20px rgba(16, 185, 129, 0.4);
+  animation: scaleUp 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+.completion-card h4 {
+  font-size: 1.4rem;
+  margin-bottom: 10px;
+  color: #fff;
+}
+
+.completion-card p {
+  color: #94a3b8;
+  font-size: 0.9rem;
+  margin-bottom: 25px;
+}
+
+.big-confirm-btn {
+  width: 100%;
+  padding: 16px;
+  background: var(--gold-gradient);
+  border: none;
+  border-radius: 12px;
+  color: #000;
+  font-weight: 800;
+  font-size: 1rem;
+  cursor: pointer;
+  margin-bottom: 15px;
+  transition: transform 0.2s;
+}
+
+.big-confirm-btn:active {
+  transform: scale(0.95);
+}
+
+.retry-btn {
+  background: none;
+  border: none;
+  color: #64748b;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+/* リアルタイム情報の微調整 */
+.live-count-badge {
+  background: rgba(255, 255, 255, 0.1);
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-size: 0.7rem;
+  color: #94a3b8;
+  margin-left: 10px;
+}
+
+.more-waits {
+  font-size: 0.8rem;
+  color: #64748b;
+  padding-left: 5px;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes scaleUp {
+  from { transform: scale(0.5); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
+}
+
+/* 聴牌・和了時のアニメーション */
+.live-analysis-bar.tenpai {
+  border: 1px solid rgba(16, 185, 129, 0.5);
+  box-shadow: 0 0 15px rgba(16, 185, 129, 0.3);
+  animation: pulse-green 2s infinite;
+}
+
+.live-analysis-bar.win {
+  border: 1px solid rgba(244, 63, 94, 0.5);
+  box-shadow: 0 0 15px rgba(244, 63, 94, 0.3);
+  animation: pulse-red 2s infinite;
+}
+
+@keyframes pulse-green {
+  0% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.4); }
+  70% { box-shadow: 0 0 0 10px rgba(16, 185, 129, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+}
+
+@keyframes pulse-red {
+  0% { box-shadow: 0 0 0 0 rgba(244, 63, 94, 0.4); }
+  70% { box-shadow: 0 0 0 10px rgba(244, 63, 94, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(244, 63, 94, 0); }
+}
+
 .section-header {
   display: flex;
   justify-content: space-between;
