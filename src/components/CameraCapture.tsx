@@ -1,4 +1,5 @@
 import React, { useRef, useState, useCallback, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { recognizer } from '../logic/vision';
 import type { RecognitionResult } from '../logic/vision';
 import { calculateShanten, getAcceptance } from '../logic/mahjong';
@@ -228,7 +229,10 @@ const CameraCapture: React.FC<Props> = ({ onDetectedTiles, onClose, dora = [] })
     ctx.stroke();
   };
 
-  return (
+  const portalRoot = document.getElementById('camera-portal');
+  if (!portalRoot) return null;
+
+  return createPortal(
     <div className={`camera-overlay ${isFlashing ? 'flashing' : ''}`}>
       <div className="camera-container">
         <div className="camera-header">
@@ -362,7 +366,8 @@ const CameraCapture: React.FC<Props> = ({ onDetectedTiles, onClose, dora = [] })
         
         <canvas ref={canvasRef} style={{ display: 'none' }} />
       </div>
-    </div>
+    </div>,
+    portalRoot
   );
 };
 

@@ -85,23 +85,21 @@ class TileRecognizer {
 
       const [x, y, w, h] = pred.bbox;
       const ratio = w / h;
-      if (ratio < 0.2 || ratio > 1.5) continue;
+      if (ratio < 0.2 || ratio > 2.0) continue; // アスペクト比を少し広く許可（斜め対応）
 
-      if (seenBoxes.some(box => this.iou(box, pred.bbox as [number, number, number, number]) > 0.5)) continue;
+      if (seenBoxes.some(box => this.iou(box, pred.bbox as [number, number, number, number]) > 0.4)) continue;
       seenBoxes.push(pred.bbox as [number, number, number, number]);
 
-      // キャッシュチェック: 前フレームで同じ位置に牌があったか
       let classified: ClassificationResult | null = null;
       const cached = this.lastResults.find(prev => this.iou(prev.bbox, pred.bbox as [number, number, number, number]) > 0.7);
       
-      if (cached && this.frameCount % 5 !== 0) {
-        // 数フレームに一度だけ再計算し、それ以外はキャッシュを利用して「爆速」にする
+      if (cached && this.frameCount % 10 !== 0) { // キャッシュ期間を少し延長
         classified = { tile: cached.tile, confidence: cached.confidence };
       } else {
         classified = await this.classify(videoElement, x, y, w, h);
       }
       
-      if (classified && classified.confidence > 0.3) {
+      if (classified && classified.confidence > 0.35) {
         results.push({
           tile: classified.tile,
           confidence: classified.confidence,
@@ -121,29 +119,31 @@ class TileRecognizer {
   private async detectWhiteBlobs(source: HTMLVideoElement): Promise<any[]> {
     return tf.tidy(() => {
       const tensor = tf.browser.fromPixels(source).resizeBilinear([240, 480]);
-      // 明るい（白っぽい）ピクセルを抽出。反射を考慮して少し範囲を広げる。
-      const whiteMask = tensor.min(2).greater(tf.scalar(140)); 
+      
+      // 画像全体の平均輝度を求めて、しきい値を動的に決める（Mリーグのような暗い背景に対応）
+      const avgBrightness = tensor.mean().dataSync()[0];
+      const threshold = Math.max(120, avgBrightness * 1.3); // 背景より30%明るい場所を探す
+      
+      const whiteMask = tensor.min(2).greater(tf.scalar(threshold)); 
       
       const boxes: any[] = [];
-      const gridH = 20; // 解像度を上げ
-      const gridW = 40;
+      const gridH = 30; // さらに細かく
+      const gridW = 60;
       const cellH = 240 / gridH;
       const cellW = 480 / gridW;
       
+      const scaleY = source.videoHeight / 240;
+      const scaleX = source.videoWidth / 480;
+
       for (let i = 0; i < gridH; i++) {
         for (let j = 0; j < gridW; j++) {
           const slice = whiteMask.slice([i * cellH, j * cellW], [cellH, cellW]);
           const density = slice.mean().dataSync()[0];
           
-          // 密集度が高い場所を候補とする
-          if (density > 0.45) {
-            const scaleY = source.videoHeight / 240;
-            const scaleX = source.videoWidth / 480;
-            
-            // 牌らしいアスペクト比（縦長または正方形に近い）を確認（任意で追加可能だが、一旦は緩く）
+          if (density > 0.40) {
             boxes.push({
               bbox: [j * cellW * scaleX, i * cellH * scaleY, cellW * scaleX, cellH * scaleY],
-              score: 0.12, // 自信度は低めに設定し、後のclassifyで精査する
+              score: 0.15,
               class: 'tile_candidate'
             });
           }
@@ -216,13 +216,12 @@ class TileRecognizer {
         const standardizedRef = this.standardize(refTensor);
         const edgeRef = this.getEdges(refTensor);
 
-        // ピクセルベースの誤差（標準化済み）
+        // NCC (正規化相互相関) のような考え方で、全体的な平均値のズレを無視してパターンの類似度を見る
         const pixelError = (tf.losses.meanSquaredError(standardizedRef, standardizedCropped) as tf.Tensor).dataSync()[0];
-        // 輪郭ベースの誤差
         const edgeError = (tf.losses.absoluteDifference(edgeRef, edgeCropped) as tf.Tensor).dataSync()[0];
         
-        // 輪郭情報を重視して統合
-        const combinedError = (pixelError * 0.3) + (edgeError * 0.7);
+        // モニター越しの場合、輪郭（エッジ）の方が情報として信頼できるため、比率を 0.8 に引き上げ
+        const combinedError = (pixelError * 0.2) + (edgeError * 0.8);
 
         if (combinedError < minCombinedError) {
           minCombinedError = combinedError;
@@ -230,29 +229,26 @@ class TileRecognizer {
         }
       });
 
-      // スコアを算出（1.0に近いほど正確）。分母を広げてスコアを甘くする。
-      const confidence = Math.max(0, 1 - (minCombinedError / 1.5));
+      // しきい値を少し緩め、候補をより拾いやすくする (2.0に緩和)
+      const confidence = Math.max(0, 1 - (minCombinedError / 2.0));
 
-      // 赤ドラ（赤五）判定 - 探索エリアを広く、反射に強く
       if (bestTileCandidate && ['m5', 'p5', 's5'].includes(bestTileCandidate as string) && confidence > 0.3) {
-        // 画像の広範囲（中心から60%程度）に赤いピクセルがあるか走査
-        const redMask = cropped.slice([8, 8], [48, 48]).unstack(2)[0]; // Rチャネル
-        const blueMask = cropped.slice([8, 8], [48, 48]).unstack(2)[2]; // Bチャネル
-        const greenMask = cropped.slice([8, 8], [48, 48]).unstack(2)[1]; // Gチャネル
+        const redMask = cropped.slice([10, 10], [44, 44]).unstack(2)[0]; // 赤ドラ判定エリアをより中心に絞る
+        const blueMask = cropped.slice([10, 10], [44, 44]).unstack(2)[2];
+        const greenMask = cropped.slice([10, 10], [44, 44]).unstack(2)[1];
         
-        // 赤が際立っているピクセル（Rが高いかつ他より1.4倍以上高い）
         const isRed = tf.logicalAnd(
-          redMask.greater(tf.scalar(0.55)), // 明るさ
-          redMask.greater(blueMask.mul(tf.scalar(1.4))) // 色味
-        ).logicalAnd(redMask.greater(greenMask.mul(tf.scalar(1.4))))
+          redMask.greater(tf.scalar(0.50)),
+          redMask.greater(blueMask.mul(tf.scalar(1.2))) // モニター越しの青みがかった環境でも赤を拾えるようしきい値を調整
+        ).logicalAnd(redMask.greater(greenMask.mul(tf.scalar(1.2))))
          .mean().dataSync()[0];
 
-        if (isRed > 0.05) { // 5%以上の領域が赤ければ、赤ドラとみなす
+        if (isRed > 0.04) {
           bestTileCandidate = (bestTileCandidate as string).replace('5', '0') as Tile;
         }
       }
 
-      if (bestTileCandidate && confidence > 0.4) {
+      if (bestTileCandidate && confidence > 0.35) {
         return { tile: bestTileCandidate, confidence };
       }
       return undefined;
