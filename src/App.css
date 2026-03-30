@@ -571,11 +571,12 @@ header p {
   top: 0;
   left: 0;
   width: 100vw;
-  height: 100dvh; /* dynamic viewport height */
+  height: 100dvh; /* viewport height */
   background: #000;
   z-index: 2000;
   display: flex;
   flex-direction: column;
+  overflow: hidden; /* スクロールを禁止し、1画面に収める */
 }
 
 .video-wrapper {
@@ -869,10 +870,12 @@ video {
   font-size: 0.9rem;
   font-weight: 700;
   background: rgba(0, 0, 0, 0.4);
-  padding: 4px 12px;
+  padding: 4px 16px;
   border-radius: 20px;
   text-transform: uppercase;
   letter-spacing: 1px;
+  white-space: nowrap; /* 縦書きや改行を防止。横長に1行で出す。 */
+  display: inline-block;
 }
 
 /* 検出オーバーレイの強化 */
@@ -958,17 +961,18 @@ video {
   /* コレが肝：ボタンやプレビューを左右または下部にコンパクトに */
   .camera-controls {
     position: absolute;
-    bottom: 0;
+    bottom: 0px;
     left: 0;
     width: 100%;
     z-index: 100;
-    background: linear-gradient(to top, rgba(0,0,0,0.8) 0%, transparent 100%);
+    background: linear-gradient(to top, rgba(0,0,0,0.9) 0%, transparent 100%);
     display: grid;
     grid-template-columns: 1fr 1fr 1fr; /* 3つのセクションを横並びに */
-    gap: 10px;
+    gap: 8px;
     align-items: center;
-    padding: 10px 20px 25px 20px;
+    padding: 8px 16px 12px 16px; /* 高さを抑える */
     border-top: none;
+    box-sizing: border-box;
   }
 
   .buffered-tiles-preview {
