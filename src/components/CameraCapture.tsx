@@ -2,7 +2,7 @@ import React, { useRef, useState, useCallback, useEffect } from 'react';
 import { recognizer } from '../logic/vision';
 import type { RecognitionResult } from '../logic/vision';
 import { calculateShanten, getAcceptance } from '../logic/mahjong';
-import type { Tile } from '../logic/mahjong';
+import type { Tile, TileAcceptance } from '../logic/mahjong';
 import { calculateScore } from '../logic/scoring';
 import type { ScoreResult } from '../logic/scoring';
 import MahjongTile from './MahjongTile';
@@ -18,12 +18,16 @@ const CameraCapture: React.FC<Props> = ({ onDetectedTiles, onClose, dora = [] })
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const overlayRef = useRef<HTMLCanvasElement>(null);
   const [isActive, setIsActive] = useState(false);
+  const [isInitializing, setIsInitializing] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [results, setResults] = useState<RecognitionResult[]>([]);
-  const [isInitializing, setIsInitializing] = useState(true);
+  const [bufferedTiles, setBufferedTiles] = useState<Tile[]>([]);
   const [liveShanten, setLiveShanten] = useState<number | null>(null);
-  const [liveAcceptance, setLiveAcceptance] = useState<any[]>([]);
+  const [liveAcceptance, setLiveAcceptance] = useState<TileAcceptance[]>([]);
   const [liveScore, setLiveScore] = useState<ScoreResult | null>(null);
+  const [isFlashing, setIsFlashing] = useState(false);
+  const [stableCount, setStableCount] = useState(0);
+  const [lastDetectedString, setLastDetectedString] = useState("");
 
   const startCamera = async () => {
     try {
@@ -50,18 +54,17 @@ const CameraCapture: React.FC<Props> = ({ onDetectedTiles, onClose, dora = [] })
     }
   }, []);
 
-
-  const [bufferedTiles, setBufferedTiles] = useState<Tile[]>([]);
-
   const handleAddToBuffer = () => {
-    const newTiles = results.map(r => r.tile as Tile);
-    setBufferedTiles(prev => {
-      const combined = [...prev, ...newTiles].slice(0, 14);
-      return combined.sort((a, b) => {
+    if (results.length > 0) {
+      const newTiles = results.map(r => r.tile as Tile);
+      const combined = [...bufferedTiles, ...newTiles].slice(0, 14);
+      setBufferedTiles(combined.sort((a, b) => {
         if (a[0] !== b[0]) return a[0].localeCompare(b[0]);
         return a[1].localeCompare(b[1]);
-      });
-    });
+      }));
+      setIsFlashing(true);
+      setTimeout(() => setIsFlashing(false), 300);
+    }
   };
 
   const clearBuffer = () => setBufferedTiles([]);
@@ -112,9 +115,8 @@ const CameraCapture: React.FC<Props> = ({ onDetectedTiles, onClose, dora = [] })
     return () => cancelAnimationFrame(animationId);
   }, [isActive, isInitializing]);
 
-  // Live Analysis Logic based on Buffer + Current Results
+  // Live Analysis & Auto-Add Logic
   useEffect(() => {
-    // バッファと現在認識中を合算
     const currentLiveTiles = results.map((r: RecognitionResult) => r.tile as Tile);
     const combinedTiles = [...bufferedTiles, ...currentLiveTiles].slice(0, 14);
 
@@ -128,7 +130,6 @@ const CameraCapture: React.FC<Props> = ({ onDetectedTiles, onClose, dora = [] })
         setLiveScore(null);
       }
 
-      // 13枚または14枚の時に有効牌/待ちを表示
       if (combinedTiles.length === 13 || combinedTiles.length === 14) {
         const acc = getAcceptance(combinedTiles.slice(0, 13));
         setLiveAcceptance(acc);
@@ -139,6 +140,20 @@ const CameraCapture: React.FC<Props> = ({ onDetectedTiles, onClose, dora = [] })
       setLiveShanten(null);
       setLiveAcceptance([]);
     }
+
+    // オートスキャンロジック: 牌が安定して1.5秒程度（約10フレーム）静止していたら自動追加
+    const currentString = currentLiveTiles.sort().join(',');
+    if (currentLiveTiles.length > 0 && currentString === lastDetectedString) {
+      if (stableCount > 8 && bufferedTiles.length < 14) {
+        handleAddToBuffer();
+        setStableCount(0);
+      } else {
+        setStableCount(prev => prev + 1);
+      }
+    } else {
+      setLastDetectedString(currentString);
+      setStableCount(0);
+    }
   }, [results, bufferedTiles, dora]);
 
   const drawOverlay = (detections: RecognitionResult[]) => {
@@ -147,29 +162,22 @@ const CameraCapture: React.FC<Props> = ({ onDetectedTiles, onClose, dora = [] })
     const video = videoRef.current;
     
     // Sync size
-    canvas.width = video.clientWidth;
-    canvas.height = video.clientHeight;
+    const rect = video.getBoundingClientRect();
+    canvas.width = rect.width;
+    canvas.height = rect.height;
     
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    const displayRatio = canvas.width / canvas.height;
-    const videoRatio = video.videoWidth / video.videoHeight;
-
-    let scale = 1;
-    let offsetX = 0;
-    let offsetY = 0;
-
-    if (videoRatio > displayRatio) {
-      // ビデオの方が横長 -> 左右がクロップされる
-      scale = canvas.height / video.videoHeight;
-      offsetX = (video.videoWidth * scale - canvas.width) / 2;
-    } else {
-      // ビデオの方が縦長（または同じ） -> 上下がクロップされる
-      scale = canvas.width / video.videoWidth;
-      offsetY = (video.videoHeight * scale - canvas.height) / 2;
-    }
+    // 画面(canvas)と動画(native)の比率から、正確なスケールを算出
+    const scaleX = canvas.width / video.videoWidth;
+    const scaleY = canvas.height / video.videoHeight;
+    
+    // object-fit: cover を考慮したスケーリング
+    const scale = Math.max(scaleX, scaleY);
+    const offsetX = (video.videoWidth * scale - canvas.width) / 2;
+    const offsetY = (video.videoHeight * scale - canvas.height) / 2;
 
     ctx.strokeStyle = '#22c55e'; // さわやかな緑色
     ctx.lineWidth = 4;
@@ -221,7 +229,7 @@ const CameraCapture: React.FC<Props> = ({ onDetectedTiles, onClose, dora = [] })
   };
 
   return (
-    <div className="camera-overlay">
+    <div className={`camera-overlay ${isFlashing ? 'flashing' : ''}`}>
       <div className="camera-container">
         <div className="camera-header">
           <h3>AI 牌認識カメラ</h3>
