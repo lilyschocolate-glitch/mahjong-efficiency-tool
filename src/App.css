@@ -591,9 +591,10 @@ header p {
 }
 
 video {
-  width: 100%;
-  height: 100%;
-  object-fit: contain; /* はみ出し防止 */
+  width: 100% !important; /* 幅を 100% に強制 */
+  height: 100% !important; /* 高さを 100% に強制 */
+  object-fit: cover !important; /* 画面いっぱいに広げる（余白を作らない） */
+  display: block;
 }
 
 .camera-controls {
@@ -911,7 +912,9 @@ video {
   }
 
   video {
-    object-fit: cover; /* 画面いっぱいに広げる */
+    width: 100% !important;
+    height: 100% !important;
+    object-fit: cover !important; /* 横向きでも全画面表示を徹底 */
   }
 
   /* ヘッダーを小さく浮かせる */

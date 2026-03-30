@@ -51,20 +51,6 @@ const CameraCapture: React.FC<Props> = ({ onCapture, onDetectedTiles, onClose, d
     }
   }, []);
 
-  const capture = () => {
-    if (videoRef.current && canvasRef.current) {
-      const video = videoRef.current;
-      const canvas = canvasRef.current;
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
-      const ctx = canvas.getContext('2d');
-      if (ctx) {
-        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-        const imageSrc = canvas.toDataURL('image/jpeg');
-        onCapture(imageSrc);
-      }
-    }
-  };
 
   const [bufferedTiles, setBufferedTiles] = useState<Tile[]>([]);
 
@@ -165,10 +151,24 @@ const CameraCapture: React.FC<Props> = ({ onCapture, onDetectedTiles, onClose, d
     if (!ctx) return;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    const scaleX = canvas.width / video.videoWidth;
-    const scaleY = canvas.height / video.videoHeight;
+    const displayRatio = canvas.width / canvas.height;
+    const videoRatio = video.videoWidth / video.videoHeight;
 
-    ctx.strokeStyle = '#22c55e'; // さわやかな緑色（Lucideのgreen-500相当）
+    let scale = 1;
+    let offsetX = 0;
+    let offsetY = 0;
+
+    if (videoRatio > displayRatio) {
+      // ビデオの方が横長 -> 左右がクロップされる
+      scale = canvas.height / video.videoHeight;
+      offsetX = (video.videoWidth * scale - canvas.width) / 2;
+    } else {
+      // ビデオの方が縦長（または同じ） -> 上下がクロップされる
+      scale = canvas.width / video.videoWidth;
+      offsetY = (video.videoHeight * scale - canvas.height) / 2;
+    }
+
+    ctx.strokeStyle = '#22c55e'; // さわやかな緑色
     ctx.lineWidth = 4;
     ctx.lineJoin = 'round';
     ctx.shadowBlur = 4;
@@ -179,10 +179,10 @@ const CameraCapture: React.FC<Props> = ({ onCapture, onDetectedTiles, onClose, d
 
     detections.forEach(det => {
       const [x, y, w, h] = det.bbox;
-      const sx = x * scaleX;
-      const sy = y * scaleY;
-      const sw = w * scaleX;
-      const sh = h * scaleY;
+      const sx = x * scale - offsetX;
+      const sy = y * scale - offsetY;
+      const sw = w * scale;
+      const sh = h * scale;
 
       // 確信度が低いものは半透明にする
       ctx.globalAlpha = det.confidence > 0.6 ? 1.0 : 0.5;
