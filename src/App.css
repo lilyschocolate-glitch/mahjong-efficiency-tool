@@ -571,12 +571,13 @@ header p {
   top: 0;
   left: 0;
   width: 100vw;
-  height: 100dvh; /* viewport height */
+  height: 100dvh;
   background: #000;
-  z-index: 2000;
+  z-index: 3000;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
-  overflow: hidden; /* スクロールを禁止し、1画面に収める */
+  touch-action: none;
 }
 
 .video-wrapper {

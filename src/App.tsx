@@ -33,6 +33,17 @@ function App() {
   const [isTsumo, setIsTsumo] = useState(false);
 
   useEffect(() => {
+    if (showCamera) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = 'unset';
+    }
+    return () => {
+      document.body.style.overflow = 'unset';
+    };
+  }, [showCamera]);
+
+  useEffect(() => {
     if (hand.length === 14 && calculateShanten(hand) === -1) {
       setScoreResult(calculateScore(hand, dora, isTsumo, true, isParent));
     } else {

@@ -233,7 +233,11 @@ const CameraCapture: React.FC<Props> = ({ onDetectedTiles, onClose, dora = [] })
       <div className="camera-container">
         <div className="camera-header">
           <h3>AI 牌認識カメラ</h3>
-          <button className="close-btn" onClick={() => { stopCamera(); onClose(); }}>✕</button>
+          <button className="close-btn" onClick={(e) => { 
+            e.stopPropagation();
+            stopCamera(); 
+            onClose(); 
+          }}>✕</button>
         </div>
 
         {liveShanten !== null && (
