@@ -188,13 +188,14 @@ const CameraCapture: React.FC<Props> = ({ onDetectedTiles, onClose, dora = [] })
       const sh = h * scale;
 
       // 確信度が低いものは半透明にする
-      ctx.globalAlpha = det.confidence > 0.6 ? 1.0 : 0.5;
+      ctx.globalAlpha = det.confidence > 0.5 ? 1.0 : 0.6;
 
       // 角丸の矩形を描画
       drawRoundedRect(ctx, sx, sy, sw, sh, 4);
       
       // ラベル背景
-      const label = `${det.tile}`;
+      const confidencePercent = Math.round(det.confidence * 100);
+      const label = `${det.tile} (${confidencePercent}%)`;
       const metrics = ctx.measureText(label);
       ctx.fillRect(sx, sy - 20, metrics.width + 10, 20);
       

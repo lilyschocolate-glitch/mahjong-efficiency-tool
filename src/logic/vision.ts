@@ -104,32 +104,33 @@ class TileRecognizer {
     return results.sort((a, b) => a.bbox[0] - b.bbox[0]);
   }
 
-  // 「白い牌」らしい領域を単純な画像処理で探す（AIが牌を見逃すのを防ぐ）
+  // AIが見逃した「白い矩形（牌）」を、幾何学的な特徴で抽出するバックアップロジック
   private async detectWhiteBlobs(source: HTMLVideoElement): Promise<any[]> {
     return tf.tidy(() => {
-      const tensor = tf.browser.fromPixels(source).resizeBilinear([180, 320]);
-      // 白に近い（全チャンネルが一定以上）ピクセルを抽出
-      const whiteMask = tensor.min(2).greater(tf.scalar(160)); 
+      const tensor = tf.browser.fromPixels(source).resizeBilinear([240, 480]);
+      // 明るい（白っぽい）ピクセルを抽出。反射を考慮して少し範囲を広げる。
+      const whiteMask = tensor.min(2).greater(tf.scalar(140)); 
       
-      // ここで本来は輪郭抽出をしたいが、性能と実装のシンプルさのため
-      // 画像をグリッドで区切り、白いピクセル密度が高いエリアをボックス候補とする
       const boxes: any[] = [];
-      const gridH = 10;
-      const gridW = 20;
-      const cellH = 180 / gridH;
-      const cellW = 320 / gridW;
+      const gridH = 20; // 解像度を上げ
+      const gridW = 40;
+      const cellH = 240 / gridH;
+      const cellW = 480 / gridW;
       
       for (let i = 0; i < gridH; i++) {
         for (let j = 0; j < gridW; j++) {
           const slice = whiteMask.slice([i * cellH, j * cellW], [cellH, cellW]);
           const density = slice.mean().dataSync()[0];
-          if (density > 0.4) {
-            // スケールを元の動画サイズに戻す
-            const scaleY = source.videoHeight / 180;
-            const scaleX = source.videoWidth / 320;
+          
+          // 密集度が高い場所を候補とする
+          if (density > 0.45) {
+            const scaleY = source.videoHeight / 240;
+            const scaleX = source.videoWidth / 480;
+            
+            // 牌らしいアスペクト比（縦長または正方形に近い）を確認（任意で追加可能だが、一旦は緩く）
             boxes.push({
               bbox: [j * cellW * scaleX, i * cellH * scaleY, cellW * scaleX, cellH * scaleY],
-              score: 0.2,
+              score: 0.12, // 自信度は低めに設定し、後のclassifyで精査する
               class: 'tile_candidate'
             });
           }
@@ -219,17 +220,19 @@ class TileRecognizer {
       // スコアを算出（1.0に近いほど正確）。分母を広げてスコアを甘くする。
       const confidence = Math.max(0, 1 - (minCombinedError / 1.5));
 
-      // 赤ドラ（赤五）判定
-      if (bestTileCandidate && ['m5', 'p5', 's5'].includes(bestTileCandidate as string) && confidence > 0.4) {
-        // クロップされた画像の中央付近に強い赤色があるかチェック
-        const redMask = cropped.slice([16, 16], [32, 32]).unstack(2)[0]; // Rチャネル
-        const blueMask = cropped.slice([16, 16], [32, 32]).unstack(2)[2]; // Bチャネル
+      // 赤ドラ（赤五）判定 - 探索エリアを広く、反射に強く
+      if (bestTileCandidate && ['m5', 'p5', 's5'].includes(bestTileCandidate as string) && confidence > 0.3) {
+        // 画像の広範囲（中心から60%程度）に赤いピクセルがあるか走査
+        const redMask = cropped.slice([8, 8], [48, 48]).unstack(2)[0]; // Rチャネル
+        const blueMask = cropped.slice([8, 8], [48, 48]).unstack(2)[2]; // Bチャネル
+        const greenMask = cropped.slice([8, 8], [48, 48]).unstack(2)[1]; // Gチャネル
         
-        // 赤が青より明らかに強いピクセルの割合
+        // 赤が際立っているピクセル（Rが高いかつ他より1.4倍以上高い）
         const isRed = tf.logicalAnd(
-          redMask.greater(tf.scalar(0.6)), // Rが一定以上
-          redMask.greater(blueMask.mul(tf.scalar(1.5))) // RがBの1.5倍以上
-        ).mean().dataSync()[0];
+          redMask.greater(tf.scalar(0.55)), // 明るさ
+          redMask.greater(blueMask.mul(tf.scalar(1.4))) // 色味
+        ).logicalAnd(redMask.greater(greenMask.mul(tf.scalar(1.4))))
+         .mean().dataSync()[0];
 
         if (isRed > 0.05) { // 5%以上の領域が赤ければ、赤ドラとみなす
           bestTileCandidate = (bestTileCandidate as string).replace('5', '0') as Tile;
