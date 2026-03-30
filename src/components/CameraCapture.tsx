@@ -148,10 +148,14 @@ const CameraCapture: React.FC<Props> = ({ onCapture, onDetectedTiles, onClose, d
     const scaleX = canvas.width / video.videoWidth;
     const scaleY = canvas.height / video.videoHeight;
 
-    ctx.strokeStyle = '#00FF00';
-    ctx.lineWidth = 3;
-    ctx.fillStyle = '#00FF00';
-    ctx.font = '16px bold sans-serif';
+    ctx.strokeStyle = '#22c55e'; // さわやかな緑色（Lucideのgreen-500相当）
+    ctx.lineWidth = 4;
+    ctx.lineJoin = 'round';
+    ctx.shadowBlur = 4;
+    ctx.shadowColor = 'rgba(0,0,0,0.5)';
+    
+    ctx.fillStyle = '#22c55e';
+    ctx.font = 'bold 14px sans-serif';
 
     detections.forEach(det => {
       const [x, y, w, h] = det.bbox;
@@ -160,9 +164,36 @@ const CameraCapture: React.FC<Props> = ({ onCapture, onDetectedTiles, onClose, d
       const sw = w * scaleX;
       const sh = h * scaleY;
 
-      ctx.strokeRect(sx, sy, sw, sh);
-      ctx.fillText(`${det.tile} (${Math.round(det.confidence * 100)}%)`, sx, sy > 20 ? sy - 5 : sy + 20);
+      // 確信度が低いものは半透明にする
+      ctx.globalAlpha = det.confidence > 0.6 ? 1.0 : 0.5;
+
+      // 角丸の矩形を描画
+      drawRoundedRect(ctx, sx, sy, sw, sh, 4);
+      
+      // ラベル背景
+      const label = `${det.tile}`;
+      const metrics = ctx.measureText(label);
+      ctx.fillRect(sx, sy - 20, metrics.width + 10, 20);
+      
+      ctx.fillStyle = '#ffffff';
+      ctx.fillText(label, sx + 5, sy - 5);
+      ctx.fillStyle = '#22c55e';
     });
+  };
+
+  const drawRoundedRect = (ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) => {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.lineTo(x + w - r, y);
+    ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+    ctx.lineTo(x + w, y + h - r);
+    ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+    ctx.lineTo(x + r, y + h);
+    ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+    ctx.lineTo(x, y + r);
+    ctx.quadraticCurveTo(x, y, x + r, y);
+    ctx.closePath();
+    ctx.stroke();
   };
 
   return (
@@ -201,6 +232,16 @@ const CameraCapture: React.FC<Props> = ({ onCapture, onDetectedTiles, onClose, d
         <div className="video-wrapper">
           <video ref={videoRef} autoPlay playsInline muted />
           <canvas ref={overlayRef} className="detection-overlay" />
+          
+          {/* 撮影ガイド枠 */}
+          <div className="camera-guide-frame">
+            <div className="guide-corners top-left"></div>
+            <div className="guide-corners top-right"></div>
+            <div className="guide-corners bottom-left"></div>
+            <div className="guide-corners bottom-right"></div>
+            <div className="guide-text">ここに手牌を合わせてください</div>
+          </div>
+
           {error && <div className="camera-error">{error}</div>}
           {(isInitializing || !isActive) && !error && (
             <div className="loading-overlay">
@@ -228,7 +269,11 @@ const CameraCapture: React.FC<Props> = ({ onCapture, onDetectedTiles, onClose, d
               </button>
             )}
           </div>
-          <p className="hint">牌を水平に並べ、明るい場所でかざしてください</p>
+          <p className="hint">
+            <strong>【認識のコツ】</strong><br />
+            牌の真上から、水平に並んだ状態でかざしてください。<br />
+            反射を抑え、明るい場所で撮影すると精度が上がります。
+          </p>
         </div>
         
         <canvas ref={canvasRef} style={{ display: 'none' }} />
