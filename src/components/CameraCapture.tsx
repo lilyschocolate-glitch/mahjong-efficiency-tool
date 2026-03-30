@@ -20,6 +20,7 @@ const CameraCapture: React.FC<Props> = ({ onDetectedTiles, onClose, dora = [] })
   const overlayRef = useRef<HTMLCanvasElement>(null);
   const [isActive, setIsActive] = useState(false);
   const [isInitializing, setIsInitializing] = useState(true);
+  const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [results, setResults] = useState<RecognitionResult[]>([]);
   const [bufferedTiles, setBufferedTiles] = useState<Tile[]>([]);
@@ -101,13 +102,16 @@ const CameraCapture: React.FC<Props> = ({ onDetectedTiles, onClose, dora = [] })
   useEffect(() => {
     let animationId: number;
     const detect = async () => {
-      if (videoRef.current && isActive && !isInitializing) {
+      if (videoRef.current && isActive && !isInitializing && !isProcessing) {
         try {
+          setIsProcessing(true);
           const detections = await recognizer.recognize(videoRef.current);
           setResults(detections);
           drawOverlay(detections);
         } catch (e) {
           console.error("Detection error", e);
+        } finally {
+          setIsProcessing(false);
         }
       }
       animationId = requestAnimationFrame(detect);
@@ -306,7 +310,7 @@ const CameraCapture: React.FC<Props> = ({ onDetectedTiles, onClose, dora = [] })
           )}
           {!isInitializing && isActive && (
             <div className="debug-status-badge">
-              <span className="dot active"></span> 
+            <h1>🀄️ 多面待ちくん <span className="version-tag">v1.6.1</span></h1>
               AI稼働中 (候補: {results.length})
             </div>
           )}

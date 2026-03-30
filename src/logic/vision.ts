@@ -115,42 +115,52 @@ class TileRecognizer {
     return results.sort((a, b) => a.bbox[0] - b.bbox[0]);
   }
 
-  // AIが見逃した「白い矩形（牌）」を、幾何学的な特徴で抽出するバックアップロジック
+    // AIが見逃した「白い矩形（牌）」を、幾何学的な特徴で抽出するバックアップロジック
   private async detectWhiteBlobs(source: HTMLVideoElement): Promise<any[]> {
-    return tf.tidy(() => {
-      const tensor = tf.browser.fromPixels(source).resizeBilinear([240, 480]);
-      
-      // 画像全体の平均輝度を求めて、しきい値を動的に決める（Mリーグのような暗い背景に対応）
-      const avgBrightness = tensor.mean().dataSync()[0];
-      const threshold = Math.max(120, avgBrightness * 1.3); // 背景より30%明るい場所を探す
-      
-      const whiteMask = tensor.min(2).greater(tf.scalar(threshold)); 
-      
-      const boxes: any[] = [];
-      const gridH = 30; // さらに細かく
-      const gridW = 60;
-      const cellH = 240 / gridH;
-      const cellW = 480 / gridW;
-      
-      const scaleY = source.videoHeight / 240;
-      const scaleX = source.videoWidth / 480;
+    const pixels = tf.browser.fromPixels(source);
+    const tensor = tf.image.resizeBilinear(pixels, [240, 480]);
+    
+    // 非同期で平均輝度などを取得
+    const avgBrightnessTensor = tensor.mean();
+    const avgBrightnessArray = await avgBrightnessTensor.array() as number;
 
-      for (let i = 0; i < gridH; i++) {
-        for (let j = 0; j < gridW; j++) {
-          const slice = whiteMask.slice([i * cellH, j * cellW], [cellH, cellW]);
-          const density = slice.mean().dataSync()[0];
-          
-          if (density > 0.40) {
-            boxes.push({
-              bbox: [j * cellW * scaleX, i * cellH * scaleY, cellW * scaleX, cellH * scaleY],
-              score: 0.15,
-              class: 'tile_candidate'
-            });
+    const threshold = Math.max(120, avgBrightnessArray * 1.3);
+    const whiteMask = tensor.min(2).greater(tf.scalar(threshold)); 
+    
+    const boxes: any[] = [];
+    const gridH = 30;
+    const gridW = 60;
+    const cellH = 240 / gridH;
+    const cellW = 480 / gridW;
+    
+    const scaleY = source.videoHeight / 240;
+    const scaleX = source.videoWidth / 480;
+
+    const maskData = await whiteMask.array() as number[][];
+    
+    for (let i = 0; i < gridH; i++) {
+      for (let j = 0; j < gridW; j++) {
+        // マスクデータの集計もなるべく効率化（CPUで行うため、全体を先に取得して走査）
+        let sum = 0;
+        for (let y = i * cellH; y < (i + 1) * cellH; y++) {
+          for (let x = j * cellW; x < (j + 1) * cellW; x++) {
+            if (maskData[Math.floor(y)][Math.floor(x)]) sum++;
           }
         }
+        const density = sum / (cellH * cellW);
+        
+        if (density > 0.40) {
+          boxes.push({
+            bbox: [j * cellW * scaleX, i * cellH * scaleY, cellW * scaleX, cellH * scaleY],
+            score: 0.15,
+            class: 'tile_candidate'
+          });
+        }
       }
-      return boxes;
-    });
+    }
+    
+    tf.dispose([pixels, tensor, avgBrightnessTensor, whiteMask]);
+    return boxes;
   }
 
   private iou(boxA: [number, number, number, number], boxB: [number, number, number, number]): number {
@@ -188,73 +198,90 @@ class TileRecognizer {
   }
 
   private async classify(source: HTMLCanvasElement | HTMLVideoElement | HTMLImageElement, x: number, y: number, w: number, h: number): Promise<ClassificationResult | null> {
-    const res = tf.tidy(() => {
-      const fullTensor = tf.browser.fromPixels(source);
-      
-      // 座標の正規化
-      const ix = Math.max(0, Math.floor(y));
-      const iy = Math.max(0, Math.floor(x));
-      const iw = Math.min(fullTensor.shape[0] - ix, Math.floor(h));
-      const ih = Math.min(fullTensor.shape[1] - iy, Math.floor(w));
+    const fullTensor = tf.browser.fromPixels(source);
+    
+    // 座標の正規化
+    const ix = Math.max(0, Math.floor(y));
+    const iy = Math.max(0, Math.floor(x));
+    const iw = Math.min(fullTensor.shape[0] - ix, Math.floor(h));
+    const ih = Math.min(fullTensor.shape[1] - iy, Math.floor(w));
 
-      if (iw < 8 || ih < 8) return undefined;
+    if (iw < 8 || ih < 8) {
+      fullTensor.dispose();
+      return null;
+    }
 
-      const cropped = tf.image.cropAndResize(
+    const cropped = tf.tidy(() => {
+      return tf.image.cropAndResize(
         fullTensor.expandDims(0) as tf.Tensor4D,
         [[ix / fullTensor.shape[0], iy / fullTensor.shape[1], (ix + iw) / fullTensor.shape[0], (iy + ih) / fullTensor.shape[1]]],
         [0],
         [64, 64]
       ).squeeze([0]).div(tf.scalar(255.0)) as tf.Tensor3D;
-
-      const standardizedCropped = this.standardize(cropped);
-      const edgeCropped = this.getEdges(cropped);
-
-      let bestTileCandidate: Tile | null = null;
-      let minCombinedError = Infinity;
-
-      this.references.forEach((refTensor, tile) => {
-        const standardizedRef = this.standardize(refTensor);
-        const edgeRef = this.getEdges(refTensor);
-
-        // NCC (正規化相互相関) のような考え方で、全体的な平均値のズレを無視してパターンの類似度を見る
-        const pixelError = (tf.losses.meanSquaredError(standardizedRef, standardizedCropped) as tf.Tensor).dataSync()[0];
-        const edgeError = (tf.losses.absoluteDifference(edgeRef, edgeCropped) as tf.Tensor).dataSync()[0];
-        
-        // モニター越しの場合、輪郭（エッジ）の方が情報として信頼できるため、比率を 0.8 に引き上げ
-        const combinedError = (pixelError * 0.2) + (edgeError * 0.8);
-
-        if (combinedError < minCombinedError) {
-          minCombinedError = combinedError;
-          bestTileCandidate = tile;
-        }
-      });
-
-      // しきい値を少し緩め、候補をより拾いやすくする (2.0に緩和)
-      const confidence = Math.max(0, 1 - (minCombinedError / 2.0));
-
-      if (bestTileCandidate && ['m5', 'p5', 's5'].includes(bestTileCandidate as string) && confidence > 0.3) {
-        const redMask = cropped.slice([10, 10], [44, 44]).unstack(2)[0]; // 赤ドラ判定エリアをより中心に絞る
-        const blueMask = cropped.slice([10, 10], [44, 44]).unstack(2)[2];
-        const greenMask = cropped.slice([10, 10], [44, 44]).unstack(2)[1];
-        
-        const isRed = tf.logicalAnd(
-          redMask.greater(tf.scalar(0.50)),
-          redMask.greater(blueMask.mul(tf.scalar(1.2))) // モニター越しの青みがかった環境でも赤を拾えるようしきい値を調整
-        ).logicalAnd(redMask.greater(greenMask.mul(tf.scalar(1.2))))
-         .mean().dataSync()[0];
-
-        if (isRed > 0.04) {
-          bestTileCandidate = (bestTileCandidate as string).replace('5', '0') as Tile;
-        }
-      }
-
-      if (bestTileCandidate && confidence > 0.35) {
-        return { tile: bestTileCandidate, confidence };
-      }
-      return undefined;
     });
 
-    return (res as ClassificationResult) || null;
+    const standardizedCropped = this.standardize(cropped);
+    const edgeCropped = this.getEdges(cropped);
+
+    let bestTileCandidate: Tile | null = null;
+    let minCombinedError = Infinity;
+
+    // テンソル比較ループを非同期で実行し、UIを止めない
+    for (const [tile, refTensor] of this.references.entries()) {
+      const combinedError = await (async () => {
+        const resultTensor = tf.tidy(() => {
+          const standardizedRef = this.standardize(refTensor);
+          const edgeRef = this.getEdges(refTensor);
+          
+          const pixelError = tf.losses.meanSquaredError(standardizedRef, standardizedCropped);
+          const edgeError = tf.losses.absoluteDifference(edgeRef, edgeCropped);
+          
+          return pixelError.mul(0.2).add(edgeError.mul(0.8));
+        });
+        const val = await resultTensor.array() as number;
+        resultTensor.dispose();
+        return val;
+      })();
+
+      if (combinedError < minCombinedError) {
+        minCombinedError = combinedError;
+        bestTileCandidate = tile;
+      }
+    }
+
+    // しきい値判定
+    const confidence = Math.max(0, 1 - (minCombinedError / 2.0));
+
+    // 赤ドラ（赤五）判定
+    if (bestTileCandidate && ['m5', 'p5', 's5'].includes(bestTileCandidate as string) && confidence > 0.3) {
+      const isRed = await (async () => {
+        const factorTensor = tf.tidy(() => {
+          const redMask = cropped.slice([10, 10], [44, 44]).unstack(2)[0];
+          const blueMask = cropped.slice([10, 10], [44, 44]).unstack(2)[2];
+          const greenMask = cropped.slice([10, 10], [44, 44]).unstack(2)[1];
+          
+          return redMask.greater(tf.scalar(0.50))
+            .logicalAnd(redMask.greater(blueMask.mul(tf.scalar(1.2))))
+            .logicalAnd(redMask.greater(greenMask.mul(tf.scalar(1.2))))
+            .mean();
+        });
+        const val = await factorTensor.array() as number;
+        factorTensor.dispose();
+        return val;
+      })();
+
+      if (isRed > 0.04) {
+        bestTileCandidate = (bestTileCandidate as string).replace('5', '0') as Tile;
+      }
+    }
+
+    // メモリ解放
+    tf.dispose([fullTensor, cropped, standardizedCropped, edgeCropped]);
+
+    if (bestTileCandidate && confidence > 0.35) {
+      return { tile: bestTileCandidate, confidence };
+    }
+    return null;
   }
 }
 
