@@ -876,3 +876,30 @@ header p {
   pointer-events: none;
   z-index: 10;
 }
+
+/* 横向き（ランドスケープ）対応 */
+@media (orientation: landscape) {
+  .camera-guide-frame {
+    width: 80%;
+    height: 60%; /* 横長にする */
+    max-height: 150px;
+  }
+
+  .video-wrapper {
+    max-height: 70vh;
+  }
+
+  .guide-text {
+    font-size: 0.8rem;
+    bottom: 10px;
+    position: absolute;
+  }
+}
+
+@media (max-width: 600px) and (orientation: landscape) {
+  .camera-container {
+    max-width: 100%;
+    margin: 0;
+    border-radius: 0;
+  }
+}
