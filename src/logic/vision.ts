@@ -17,6 +17,8 @@ class TileRecognizer {
   private model: cocoSsd.ObjectDetection | null = null;
   private references: Map<Tile, tf.Tensor3D> = new Map();
   private isLoaded = false;
+  private lastResults: RecognitionResult[] = []; // 前フレームの認識結果
+  private frameCount = 0;
 
   async init() {
     if (this.isLoaded) return;
@@ -79,19 +81,27 @@ class TileRecognizer {
     const seenBoxes: [number, number, number, number][] = [];
 
     for (const pred of predictions) {
-      if (pred.score < 0.10) continue; // しきい値を引き下げて検出しやすく
+      if (pred.score < 0.10) continue; 
 
       const [x, y, w, h] = pred.bbox;
       const ratio = w / h;
       if (ratio < 0.2 || ratio > 1.5) continue;
 
-      // 重複するボックスを避ける（NMS的な簡易処理）
       if (seenBoxes.some(box => this.iou(box, pred.bbox as [number, number, number, number]) > 0.5)) continue;
       seenBoxes.push(pred.bbox as [number, number, number, number]);
 
-      const classified = await this.classify(videoElement, x, y, w, h);
+      // キャッシュチェック: 前フレームで同じ位置に牌があったか
+      let classified: ClassificationResult | null = null;
+      const cached = this.lastResults.find(prev => this.iou(prev.bbox, pred.bbox as [number, number, number, number]) > 0.7);
       
-      if (classified && classified.confidence > 0.3) { // しきい値を引き下げ
+      if (cached && this.frameCount % 5 !== 0) {
+        // 数フレームに一度だけ再計算し、それ以外はキャッシュを利用して「爆速」にする
+        classified = { tile: cached.tile, confidence: cached.confidence };
+      } else {
+        classified = await this.classify(videoElement, x, y, w, h);
+      }
+      
+      if (classified && classified.confidence > 0.3) {
         results.push({
           tile: classified.tile,
           confidence: classified.confidence,
@@ -99,6 +109,9 @@ class TileRecognizer {
         });
       }
     }
+
+    this.frameCount++;
+    this.lastResults = results;
 
     // X座標でソートして左から順に並べる
     return results.sort((a, b) => a.bbox[0] - b.bbox[0]);
