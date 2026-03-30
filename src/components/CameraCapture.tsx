@@ -2,10 +2,8 @@ import React, { useRef, useState, useCallback, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { recognizer } from '../logic/vision';
 import type { RecognitionResult } from '../logic/vision';
-import { calculateShanten, getAcceptance } from '../logic/mahjong';
-import type { Tile, TileAcceptance } from '../logic/mahjong';
-import { calculateScore } from '../logic/scoring';
-import type { ScoreResult } from '../logic/scoring';
+import { calculateShanten } from '../logic/mahjong';
+import type { Tile } from '../logic/mahjong';
 import MahjongTile from './MahjongTile';
 
 interface Props {
@@ -25,8 +23,6 @@ const CameraCapture: React.FC<Props> = ({ onDetectedTiles, onClose, dora = [] })
   const [results, setResults] = useState<RecognitionResult[]>([]);
   const [bufferedTiles, setBufferedTiles] = useState<Tile[]>([]);
   const [liveShanten, setLiveShanten] = useState<number | null>(null);
-  const [liveAcceptance, setLiveAcceptance] = useState<TileAcceptance[]>([]);
-  const [liveScore, setLiveScore] = useState<ScoreResult | null>(null);
   const [isFlashing, setIsFlashing] = useState(false);
   const [stableCount, setStableCount] = useState(0);
   const [lastDetectedString, setLastDetectedString] = useState("");
@@ -83,18 +79,22 @@ const CameraCapture: React.FC<Props> = ({ onDetectedTiles, onClose, dora = [] })
     setBufferedTiles(prev => prev.filter((_, i) => i !== idx));
   };
   
-  // Initialize recognizer
+  // Initialize recognizer & camera parallelly
   useEffect(() => {
+    // 映像を真っ先に起動する（ユーザーを待たせない）
+    startCamera();
+    
     const init = async () => {
       try {
         await recognizer.init();
         setIsInitializing(false);
       } catch (e) {
         console.error("Recognizer init failed", e);
+        setError("AIモデルの初期化に失敗しました。");
       }
     };
     init();
-    startCamera();
+
     return () => stopCamera();
   }, [stopCamera]);
 
@@ -128,22 +128,8 @@ const CameraCapture: React.FC<Props> = ({ onDetectedTiles, onClose, dora = [] })
     if (combinedTiles.length >= 1) {
       const s = calculateShanten(combinedTiles);
       setLiveShanten(s);
-
-      if (s === -1 && combinedTiles.length === 14) {
-        setLiveScore(calculateScore(combinedTiles, dora));
-      } else {
-        setLiveScore(null);
-      }
-
-      if (combinedTiles.length === 13 || combinedTiles.length === 14) {
-        const acc = getAcceptance(combinedTiles.slice(0, 13));
-        setLiveAcceptance(acc);
-      } else {
-        setLiveAcceptance([]);
-      }
     } else {
       setLiveShanten(null);
-      setLiveAcceptance([]);
     }
 
     // オートスキャンロジック: 牌が安定して1.5秒程度（約10フレーム）静止していたら自動追加
@@ -185,10 +171,10 @@ const CameraCapture: React.FC<Props> = ({ onDetectedTiles, onClose, dora = [] })
     const offsetY = (video.videoHeight * scale - canvas.height) / 2;
 
     ctx.strokeStyle = '#22c55e'; // さわやかな緑色
-    ctx.lineWidth = 4;
+    ctx.lineWidth = 6; // さらに太くして視認性をアップ
     ctx.lineJoin = 'round';
-    ctx.shadowBlur = 4;
-    ctx.shadowColor = 'rgba(0,0,0,0.5)';
+    ctx.shadowBlur = 8; // 光彩エフェクト
+    ctx.shadowColor = 'rgba(34, 197, 94, 0.6)';
     
     ctx.fillStyle = '#22c55e';
     ctx.font = 'bold 14px sans-serif';
@@ -248,30 +234,33 @@ const CameraCapture: React.FC<Props> = ({ onDetectedTiles, onClose, dora = [] })
           }}>✕</button>
         </div>
 
+        {/* ライブ認識トレイを上部に配置: 何を読み取っているか一目でわかる */}
+        <div className="live-detection-tray-top">
+          {results.length > 0 ? (
+            <div className="live-tiles-row">
+              {results.map((r, i) => (
+                <div key={i} className="live-tile-item">
+                  <MahjongTile tile={r.tile as Tile} size="small" />
+                  <div className="conf-bar" style={{ height: `${r.confidence * 100}%` }}></div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className={`status-pill ${isInitializing ? 'loading' : 'scanning'}`}>
+              <span className="dot"></span>
+              {isInitializing ? 'AIモデル準備中...' : 'スキャン中...'}
+            </div>
+          )}
+        </div>
+
         {liveShanten !== null && (
           <div className={`live-analysis-bar ${liveShanten <= 0 ? (liveShanten === -1 ? 'win' : 'tenpai') : ''}`}>
             <div className="live-main-status">
               <span className="live-shanten-text">
-                {liveShanten === -1 ? '🀄 和了！' : liveShanten === 0 ? '🔥 聴牌（テンパイ）！' : `${liveShanten}向聴`}
+                {liveShanten === -1 ? '🀄 和了！' : liveShanten === 0 ? '🔥 聴牌！' : `${liveShanten}向聴`}
               </span>
               <span className="live-count-badge">{bufferedTiles.length + results.length > 14 ? 14 : bufferedTiles.length + results.length}/14枚</span>
             </div>
-            {liveAcceptance.length > 0 && liveShanten !== -1 && (
-              <div className="live-waits-row">
-                <span className="label">{liveShanten <= 0 ? '待ち:' : '次の一手:'}</span>
-                <div className="mini-tiles-scroll">
-                  {liveAcceptance.slice(0, 8).map(a => (
-                    <MahjongTile key={a.tile} tile={a.tile} size="small" className="mini-tile" />
-                  ))}
-                  {liveAcceptance.length > 8 && <span className="more-waits">...</span>}
-                </div>
-              </div>
-            )}
-            {liveScore && liveScore.han > 0 && (
-              <div className="live-score-preview">
-                <span className="points">{liveScore.pointsCustom || `${liveScore.points}点`}</span>
-              </div>
-            )}
           </div>
         )}
         
@@ -279,7 +268,15 @@ const CameraCapture: React.FC<Props> = ({ onDetectedTiles, onClose, dora = [] })
           <video ref={videoRef} autoPlay playsInline muted />
           <canvas ref={overlayRef} className="detection-overlay" />
           
-          {/* 14枚揃った時のオーバーレイ通知 */}
+          {/* AI起動中の控えめなインジケーター */}
+          {isInitializing && (
+            <div className="minimal-status-loading">
+              <div className="pulse-dot"></div>
+              AI起動中 (数秒かかる場合があります)
+            </div>
+          )}
+
+          {/* 14枚揃った時のオーバーレイ */}
           {bufferedTiles.length === 14 && (
             <div className="completion-overlay">
               <div className="completion-card">
@@ -292,32 +289,18 @@ const CameraCapture: React.FC<Props> = ({ onDetectedTiles, onClose, dora = [] })
             </div>
           )}
           
-          {/* 撮影ガイド枠 */}
           <div className="camera-guide-frame">
             <div className="guide-corners top-left"></div>
             <div className="guide-corners top-right"></div>
             <div className="guide-corners bottom-left"></div>
             <div className="guide-corners bottom-right"></div>
-            <div className="guide-text">ここに手牌を合わせてください</div>
+            <div className="guide-text">{bufferedTiles.length}/14 枚スキャン済み</div>
           </div>
 
           {error && <div className="camera-error">{error}</div>}
-          {isInitializing && !error && (
-            <div className="loading-overlay">
-              <div className="spinner"></div>
-              <span>AIモデル(COCO-SSD)を読み込み中...</span>
-            </div>
-          )}
-          {!isInitializing && isActive && (
-            <div className="debug-status-badge">
-            <h1>🀄️ 多面待ちくん <span className="version-tag">v1.6.1</span></h1>
-              AI稼働中 (候補: {results.length})
-            </div>
-          )}
         </div>
 
         <div className="camera-controls">
-          {/* 累積された牌のプレビュー */}
           <div className="buffered-tiles-preview">
             <div className="section-header">
               <span className="label">スキャン済み: {bufferedTiles.length}/14枚</span>
@@ -333,27 +316,6 @@ const CameraCapture: React.FC<Props> = ({ onDetectedTiles, onClose, dora = [] })
                 <div key={`empty-${i}`} className="mini-tile-empty" />
               ))}
             </div>
-          </div>
-          
-          <div className="live-detection-tray">
-            <div className="detection-scroll-preview">
-              {results.length > 0 ? (
-                <div className="mini-tiles-row">
-                  {results.map((r, i) => (
-                    <MahjongTile key={i} tile={r.tile as Tile} size="small" />
-                  ))}
-                </div>
-              ) : (
-                <p className="detecting-text">スキャン中...</p>
-              )}
-            </div>
-            <button 
-              className="cam-btn add-btn" 
-              onClick={handleAddToBuffer}
-              disabled={results.length === 0 || bufferedTiles.length >= 14}
-            >
-              追加
-            </button>
           </div>
           
           <div className="action-buttons">
