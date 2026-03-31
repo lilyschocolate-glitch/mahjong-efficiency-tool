@@ -15,7 +15,9 @@ interface ClassificationResult {
 
 class TileRecognizer {
   private model: cocoSsd.ObjectDetection | null = null;
-  private references: Map<Tile, tf.Tensor3D> = new Map();
+  private stackedStandardizedRefs: tf.Tensor4D | null = null;
+  private stackedEdgeRefs: tf.Tensor3D | null = null;
+  private referenceNames: Tile[] = [];
   private isLoaded = false;
   private lastResults: RecognitionResult[] = []; // 前フレームの認識結果
   private frameCount = 0;
@@ -46,6 +48,10 @@ class TileRecognizer {
     const tileTypes = ['z', 'm', 's', 'p'] as const;
     const tileCounts = [10, 9, 9, 9];
 
+    const standards: tf.Tensor3D[] = [];
+    const edges: tf.Tensor2D[] = [];
+    this.referenceNames = [];
+
     for (let row = 0; row < 4; row++) {
       const type = tileTypes[row];
       const count = tileCounts[row];
@@ -61,9 +67,26 @@ class TileRecognizer {
         ctx.drawImage(img, col * sw, row * sh, sw, sh, 0, 0, 64, 64);
         
         const tensor = tf.browser.fromPixels(canvas).toFloat().div(tf.scalar(255.0)) as tf.Tensor3D;
-        this.references.set(tileName, tensor);
+        
+        // ベクトル化のための準備
+        const std = this.standardize(tensor);
+        const edg = this.getEdges(tensor);
+        
+        this.referenceNames.push(tileName);
+        standards.push(std);
+        edges.push(edg);
+        
+        tensor.dispose();
       }
     }
+
+    // 44枚の参照牌を一つの巨大な塊（スタック）にしてGPUに送る
+    this.stackedStandardizedRefs = tf.stack(standards) as tf.Tensor4D;
+    this.stackedEdgeRefs = tf.stack(edges) as tf.Tensor3D;
+    
+    // 中間テンソルの解放（スタック後は不要）
+    standards.forEach(t => t.dispose());
+    edges.forEach(t => t.dispose());
   }
 
   async recognize(videoElement: HTMLVideoElement): Promise<RecognitionResult[]> {
@@ -72,7 +95,7 @@ class TileRecognizer {
     let predictions = await this.model.detect(videoElement);
     
     // AIモデル（coco-ssd）が牌を1つも見つけられなかった場合のフォールバック
-    if (predictions.length === 0 || predictions.every(p => p.score < 0.25)) {
+    if (predictions.length === 0 || predictions.every((p: any) => p.score < 0.25)) {
       const fallbackBoxes = await this.detectWhiteBlobs(videoElement);
       predictions = [...predictions, ...fallbackBoxes];
     }
@@ -198,6 +221,8 @@ class TileRecognizer {
   }
 
   private async classify(source: HTMLCanvasElement | HTMLVideoElement | HTMLImageElement, x: number, y: number, w: number, h: number): Promise<ClassificationResult | null> {
+    if (!this.stackedStandardizedRefs || !this.stackedEdgeRefs) return null;
+
     const fullTensor = tf.browser.fromPixels(source);
     
     // 座標の正規化
@@ -211,48 +236,57 @@ class TileRecognizer {
       return null;
     }
 
-    const cropped = tf.tidy(() => {
-      return tf.image.cropAndResize(
+    const { cropped, standardizedCropped, edgeCropped } = tf.tidy(() => {
+      const crp = tf.image.cropAndResize(
         fullTensor.expandDims(0) as tf.Tensor4D,
         [[ix / fullTensor.shape[0], iy / fullTensor.shape[1], (ix + iw) / fullTensor.shape[0], (iy + ih) / fullTensor.shape[1]]],
         [0],
         [64, 64]
       ).squeeze([0]).div(tf.scalar(255.0)) as tf.Tensor3D;
+      
+      return {
+        cropped: crp,
+        standardizedCropped: this.standardize(crp),
+        edgeCropped: this.getEdges(crp)
+      };
     });
 
-    const standardizedCropped = this.standardize(cropped);
-    const edgeCropped = this.getEdges(cropped);
+    // --- 一括ベクトル判定 (v1.7.1 新ロジック) ---
+    // 44枚すべての牌との誤差を同時に計算し、await を一回に激減
+    const { bestIdx, confidence } = await (async () => {
+      const combinedErrorTensor = tf.tidy(() => {
+        // Pixel誤差 (MSE) [44]
+        const diffPixel = this.stackedStandardizedRefs!.sub(standardizedCropped.expandDims(0));
+        const pixelError = diffPixel.square().mean([1, 2, 3]);
 
-    let bestTileCandidate: Tile | null = null;
-    let minCombinedError = Infinity;
+        // Edge誤差 (MAE) [44]
+        const diffEdge = this.stackedEdgeRefs!.sub(edgeCropped.expandDims(0));
+        const edgeError = diffEdge.abs().mean([1, 2]);
 
-    // テンソル比較ループを非同期で実行し、UIを止めない
-    for (const [tile, refTensor] of this.references.entries()) {
-      const combinedError = await (async () => {
-        const resultTensor = tf.tidy(() => {
-          const standardizedRef = this.standardize(refTensor);
-          const edgeRef = this.getEdges(refTensor);
-          
-          const pixelError = tf.losses.meanSquaredError(standardizedRef, standardizedCropped);
-          const edgeError = tf.losses.absoluteDifference(edgeRef, edgeCropped);
-          
-          return pixelError.mul(0.2).add(edgeError.mul(0.8));
-        });
-        const val = await resultTensor.array() as number;
-        resultTensor.dispose();
-        return val;
-      })();
+        // 統合誤差（エッジを重視）
+        return pixelError.mul(0.2).add(edgeError.mul(0.8));
+      });
 
-      if (combinedError < minCombinedError) {
-        minCombinedError = combinedError;
-        bestTileCandidate = tile;
+      const errors = await combinedErrorTensor.array() as number[];
+      combinedErrorTensor.dispose();
+
+      let minErr = Infinity;
+      let minIdx = -1;
+      for (let i = 0; i < errors.length; i++) {
+        if (errors[i] < minErr) {
+          minErr = errors[i];
+          minIdx = i;
+        }
       }
-    }
 
-    // しきい値判定
-    const confidence = Math.max(0, 1 - (minCombinedError / 2.0));
+      // しきい値を以前より少しだけ緩め（2.2）、モニター越しの判定漏れを防ぐ
+      const conf = Math.max(0, 1 - (minErr / 2.2));
+      return { bestIdx: minIdx, confidence: conf };
+    })();
 
-    // 赤ドラ（赤五）判定
+    let bestTileCandidate: Tile | null = this.referenceNames[bestIdx];
+
+    // 赤ドラ判定
     if (bestTileCandidate && ['m5', 'p5', 's5'].includes(bestTileCandidate as string) && confidence > 0.3) {
       const isRed = await (async () => {
         const factorTensor = tf.tidy(() => {
@@ -260,7 +294,7 @@ class TileRecognizer {
           const blueMask = cropped.slice([10, 10], [44, 44]).unstack(2)[2];
           const greenMask = cropped.slice([10, 10], [44, 44]).unstack(2)[1];
           
-          return redMask.greater(tf.scalar(0.50))
+          return redMask.greater(tf.scalar(0.45))
             .logicalAnd(redMask.greater(blueMask.mul(tf.scalar(1.2))))
             .logicalAnd(redMask.greater(greenMask.mul(tf.scalar(1.2))))
             .mean();
@@ -270,15 +304,15 @@ class TileRecognizer {
         return val;
       })();
 
-      if (isRed > 0.04) {
+      if (isRed > 0.035) {
         bestTileCandidate = (bestTileCandidate as string).replace('5', '0') as Tile;
       }
     }
 
-    // メモリ解放
     tf.dispose([fullTensor, cropped, standardizedCropped, edgeCropped]);
 
-    if (bestTileCandidate && confidence > 0.35) {
+    // 0.3あれば「吸いつく」ように認識されるように調整
+    if (bestTileCandidate && confidence > 0.3) {
       return { tile: bestTileCandidate, confidence };
     }
     return null;
