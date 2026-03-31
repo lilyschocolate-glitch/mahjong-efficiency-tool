@@ -296,17 +296,20 @@ class TileRecognizer {
 
   // 画像のエッジ（輪郭）情報を抽出する（Sobelフィルタを手動実装）
   private getEdges(tensor: tf.Tensor3D): tf.Tensor2D {
+    // エッジ（輪郭）抽出
     return tf.tidy(() => {
-      const grayscale = tensor.mean(2).expandDims(-1).expandDims(0) as tf.Tensor4D;
+      const gray = tensor.mean(2).expandDims(2);
+      const sobelX = tf.tensor4d([-1, 0, 1, -2, 0, 2, -1, 0, 1], [3, 3, 1, 1]);
+      const sobelY = tf.tensor4d([-1, -2, -1, 0, 0, 0, 1, 2, 1], [3, 3, 1, 1]);
       
-      const kernelX = tf.tensor4d([-1, 0, 1, -2, 0, 2, -1, 0, 1], [3, 3, 1, 1]);
-      const kernelY = tf.tensor4d([-1, -2, -1, 0, 0, 0, 1, 2, 1], [3, 3, 1, 1]);
+      const gX = tf.conv2d(gray.expandDims(0) as tf.Tensor4D, sobelX, 1, 'same');
+      const gY = tf.conv2d(gray.expandDims(0) as tf.Tensor4D, sobelY, 1, 'same');
       
-      const gx = tf.conv2d(grayscale, kernelX, 1, 'same');
-      const gy = tf.conv2d(grayscale, kernelY, 1, 'same');
-      
-      const magnitude = tf.sqrt(tf.add(tf.square(gx), tf.square(gy)));
-      return magnitude.squeeze() as tf.Tensor2D;
+      // 反射対策 (v1.11.1): 
+      // プラスチック牌のテカリ（極端に明るい点）による誤エッジを抑制するため、
+      // 勾配の強さを一定値でクリップし、彫像の溝だけを際立たせる
+      const magnitude = tf.sqrt(tf.add(gX.square(), gY.square())).squeeze();
+      return magnitude.clipByValue(0, 1.5).div(tf.scalar(1.5)) as tf.Tensor2D;
     });
   }
 
@@ -448,6 +451,14 @@ class TileRecognizer {
     tf.dispose([oldStd, oldEdg, newRef.std, newRef.edg]);
     this.learnedTiles.add(tile);
     console.log(`AI learned: ${tile}`);
+  }
+
+  // 全ての学習データを消去（環境が変わった時用）
+  async resetLearning() {
+    if (!this.isLoaded) return;
+    this.learnedTiles.clear();
+    await this.loadReferences(); // 初期状態に戻す
+    console.log("AI learning reset to default");
   }
 
   // 牌種ごとの物理的な特徴（色・構造）が一致しているかを検証する

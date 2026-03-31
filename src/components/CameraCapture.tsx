@@ -263,12 +263,22 @@ const CameraCapture: React.FC<Props> = ({ onDetectedTiles, onClose, dora = [] })
     <div className={`camera-overlay ${isFlashing ? 'flashing' : ''}`}>
       <div className="camera-container">
         <div className="camera-header">
-          <h1>🀄️ 多面待ちくん <span className="version-tag">v1.11.0</span></h1>
-          <button className="close-btn" onClick={(e) => { 
-            e.stopPropagation();
-            stopCamera(); 
-            onClose(); 
-          }}>✕</button>
+          <h3>AI 牌認識カメラ <span className="version-tag">v1.11.1</span></h3>
+          <div className="header-actions">
+            <button className="reset-learning-btn" onClick={(e) => {
+              e.stopPropagation();
+              if (window.confirm("学習した環境データをリセットしますか？（卓や照明が変わった時に推奨）")) {
+                recognizer.resetLearning();
+                setLearningMessage("AIの学習をリセットしました");
+                setTimeout(() => setLearningMessage(null), 2000);
+              }
+            }}>学習リセット</button>
+            <button className="close-btn" onClick={(e) => { 
+              e.stopPropagation();
+              stopCamera(); 
+              onClose(); 
+            }}>✕</button>
+          </div>
         </div>
 
         <div className="live-detection-tray-top">
