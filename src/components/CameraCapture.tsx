@@ -289,13 +289,13 @@ const CameraCapture: React.FC<Props> = ({ onDetectedTiles, onClose, dora = [] })
             </div>
           )}
           
-          <div className="camera-guide-frame">
-            <div className="guide-corners top-left"></div>
-            <div className="guide-corners top-right"></div>
-            <div className="guide-corners bottom-left"></div>
-            <div className="guide-corners bottom-right"></div>
-            <div className="guide-text">{bufferedTiles.length}/14 枚スキャン済み</div>
-          </div>
+            <div className="camera-guide-frame">
+              <div className="guide-corners top-left"></div>
+              <div className="guide-corners top-right"></div>
+              <div className="guide-corners bottom-left"></div>
+              <div className="guide-corners bottom-right"></div>
+              <div className="guide-text">牌に近づけて、左から右へパンしながらスキャンしてください</div>
+            </div>
 
           {error && <div className="camera-error">{error}</div>}
         </div>
