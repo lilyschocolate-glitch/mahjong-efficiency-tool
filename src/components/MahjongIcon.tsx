@@ -95,10 +95,13 @@ const MahjongIcon: React.FC<Props> = ({ tile, className, size = 'medium' }) => {
     if (v === 1) {
       return (
         <g fill={red ? colors.red : colors.green}>
-          <path d="M50,25 Q65,25 70,40 Q75,60 55,80 Q45,25 50,25" fill={red ? colors.red : colors.green} />
-          <path d="M50,25 Q35,25 30,40 Q25,60 45,80 Q55,25 50,25" fill={red ? "#e53935" : "#219150"} />
-          <circle cx="50" cy="35" r="5" fill={red ? "#ff8a80" : colors.red} /> 
-          <path d="M50,45 L45,60 L55,60 Z" fill={red ? colors.red : colors.blue} />
+          {/* 孔雀の胴体と羽のデザイン改善 */}
+          <path d="M50,35 Q65,30 75,45 Q80,65 55,80 Q45,35 50,35" fill={red ? colors.red : colors.green} />
+          <path d="M50,35 Q35,30 25,45 Q20,65 45,80 Q55,35 50,35" fill={red ? "#e53935" : "#1b5e20"} />
+          <path d="M50,25 C60,15 75,25 70,45" fill="none" stroke={red ? colors.red : colors.green} strokeWidth="2" />
+          <path d="M50,25 C40,15 25,25 30,45" fill="none" stroke={red ? "#ef5350" : "#43a047"} strokeWidth="2" />
+          <circle cx="50" cy="25" r="5" fill={red ? "#ff8a80" : colors.red} /> 
+          <path d="M50,45 L42,65 L58,65 Z" fill={red ? colors.red : colors.blue} />
           {red && <circle cx="85" cy="15" r="4" fill="#d32f2f" />}
         </g>
       );
@@ -169,8 +172,8 @@ function getDotPositions(v: number) {
   if (v === 3) return [{x:25, y:25}, {x:50, y:55}, {x:75, y:85}];
   if (v === 4) return [{x:30, y:35}, {x:70, y:35}, {x:30, y:85}, {x:70, y:85}];
   if (v === 5) return [{x:30, y:35}, {x:70, y:35}, {x:50, y:60}, {x:30, y:85}, {x:70, y:85}];
-  if (v === 6) return [{x:30, y:35}, {x:70, y:35}, {x:30, y:60}, {x:70, y:60}, {x:30, y:85}, {x:70, y:85}];
-  if (v === 7) return [{x:50, y:25}, {x:30, y:45}, {x:70, y:45}, {x:30, y:75}, {x:70, y:75}, {x:30, y:95}, {x:70, y:95}];
+  if (v === 6) return [{x:35, y:30}, {x:65, y:30}, {x:35, y:55}, {x:65, y:55}, {x:35, y:80}, {x:65, y:80}];
+  if (v === 7) return [{x:25, y:20}, {x:45, y:35}, {x:65, y:50}, {x:35, y:75}, {x:65, y:75}, {x:35, y:100}, {x:65, y:100}];
   if (v === 8) return [{x:30, y:25}, {x:70, y:25}, {x:30, y:50}, {x:70, y:50}, {x:30, y:75}, {x:70, y:75}, {x:30, y:100}, {x:70, y:100}];
   if (v === 9) return [{x:25, y:30}, {x:50, y:30}, {x:75, y:30}, {x:25, y:60}, {x:50, y:60}, {x:75, y:60}, {x:25, y:90}, {x:50, y:90}, {x:75, y:90}];
   return res;
@@ -184,7 +187,7 @@ function getStickPositions(v: number) {
   if (v === 5) return [{x:30, y:35}, {x:70, y:35}, {x:50, y:60}, {x:30, y:85}, {x:70, y:85}];
   if (v === 6) return [{x:30, y:40}, {x:50, y:40}, {x:70, y:40}, {x:30, y:85}, {x:50, y:85}, {x:70, y:85}];
   if (v === 7) return [{x:50, y:30}, {x:30, y:65}, {x:50, y:65}, {x:70, y:65}, {x:30, y:95}, {x:50, y:95}, {x:70, y:95}];
-  if (v === 8) return [{x:30, y:35}, {x:50, y:35}, {x:70, y:35}, {x:50, y:65}, {x:30, y:95}, {x:50, y:95}, {x:70, y:95}, {x:50, y:50}];
+  if (v === 8) return [{x:25, y:30}, {x:38, y:45}, {x:62, y:45}, {x:75, y:30}, {x:25, y:75}, {x:38, y:90}, {x:62, y:90}, {x:75, y:75}];
   if (v === 9) return [{x:30, y:30}, {x:50, y:30}, {x:70, y:30}, {x:30, y:65}, {x:50, y:65}, {x:70, y:65}, {x:30, y:100}, {x:50, y:100}, {x:70, y:100}];
   return [];
 }
