@@ -154,7 +154,7 @@ function App() {
   return (
     <div className="container">
       <header>
-        <h1>🀄️ 多面待ちくん <span className="version-tag">v1.9.2</span></h1>
+        <h1>🀄️ 多面待ちくん <span className="version-tag">v1.10.0</span></h1>
         <p>手牌をカメラでかざすだけで、待ち牌や牌効率を瞬時に診断します。</p>
       </header>
 
