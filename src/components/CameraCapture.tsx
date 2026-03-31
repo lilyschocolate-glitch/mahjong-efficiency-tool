@@ -263,7 +263,7 @@ const CameraCapture: React.FC<Props> = ({ onDetectedTiles, onClose, dora = [] })
     <div className={`camera-overlay ${isFlashing ? 'flashing' : ''}`}>
       <div className="camera-container">
         <div className="camera-header">
-          <h1>🀄️ 多面待ちくん <span className="version-tag">v1.11.2</span></h1>
+          <h1>🀄️ 多面待ちくん <span className="version-tag">v1.11.3</span></h1>
           <div className="header-actions">
             <button className="reset-learning-btn" onClick={(e) => {
               e.stopPropagation();
@@ -281,6 +281,42 @@ const CameraCapture: React.FC<Props> = ({ onDetectedTiles, onClose, dora = [] })
           </div>
         </div>
 
+        <div className="camera-controls">
+          <div className="action-buttons">
+            <button className="camera-btn cancel-btn" onClick={() => { stopCamera(); onClose(); }}>閉じる</button>
+            <button 
+              className="camera-btn confirm-btn" 
+              onClick={handleConfirm}
+              disabled={bufferedTiles.length === 0 && results.length === 0}
+            >
+              {bufferedTiles.length > 0 ? `解析を開始 (${bufferedTiles.length}枚)` : '現在の牌で解析'}
+            </button>
+          </div>
+
+          <div className="buffered-tiles-section">
+            <div className="section-header">
+              <span className="label">スキャン済み: {bufferedTiles.length}/14枚</span>
+              {bufferedTiles.length > 0 && (
+                <button className="text-btn" onClick={(e) => { e.stopPropagation(); clearBuffer(); }}>全消去</button>
+              )}
+            </div>
+            <div className="buffered-tiles-scroll-row">
+              {bufferedTiles.map((tile, idx) => (
+                <div key={idx} className="buffered-tile-wrapper" onClick={() => setEditingIndex(idx)}>
+                  <MahjongTile tile={tile} size="small" />
+                  <button className="remove-tile-btn" onClick={(e) => {
+                    e.stopPropagation();
+                    handleRemoveBuffered(idx);
+                  }}>✕</button>
+                </div>
+              ))}
+              {[...Array(Math.max(0, 14 - bufferedTiles.length))].map((_, i) => (
+                <div key={`empty-${i}`} className="empty-tile-slot"></div>
+              ))}
+            </div>
+          </div>
+        </div>
+
         <div className="live-detection-tray-top">
           {results.length > 0 ? (
             <div className="live-tiles-row">
@@ -293,6 +329,7 @@ const CameraCapture: React.FC<Props> = ({ onDetectedTiles, onClose, dora = [] })
             </div>
           ) : (
             <div className={`status-pill ${isInitializing ? 'loading' : 'scanning'}`}>
+              <div className="dot"></div>
               {isInitializing ? 'AIモデル準備中...' : `スキャン中... (候補: ${results.length})`}
             </div>
           )}
@@ -338,39 +375,10 @@ const CameraCapture: React.FC<Props> = ({ onDetectedTiles, onClose, dora = [] })
               <div className="guide-corners bottom-left"></div>
               <div className="guide-corners bottom-right"></div>
               <p>牌に近づけて、左から右へパンしながらスキャンしてください。</p>
-              {learningMessage && (
-                <div className="learning-toast">
-                  ✨ {learningMessage} (AIがあなたの環境を学習中)
-                </div>
-              )}
             </div>
 
           {error && <div className="camera-error">{error}</div>}
         </div>
-
-        <div className="camera-controls">
-          <div className="buffered-tiles-section">
-            <div className="section-header">
-              <span className="label">スキャン済み: {bufferedTiles.length}/14枚</span>
-              {bufferedTiles.length > 0 && (
-                <button className="text-btn" onClick={(e) => { e.stopPropagation(); clearBuffer(); }}>全消去</button>
-              )}
-            </div>
-            <div className="buffered-tiles-scroll-row">
-              {bufferedTiles.map((tile, idx) => (
-                <div key={idx} className="buffered-tile-wrapper" onClick={() => setEditingIndex(idx)}>
-                  <MahjongTile tile={tile} size="small" />
-                  <button className="remove-tile-btn" onClick={(e) => {
-                    e.stopPropagation();
-                    handleRemoveBuffered(idx);
-                  }}>✕</button>
-                </div>
-              ))}
-              {[...Array(Math.max(0, 14 - bufferedTiles.length))].map((_, i) => (
-                <div key={`empty-${i}`} className="empty-tile-slot"></div>
-              ))}
-            </div>
-          </div>
 
         {editingIndex !== null && (
           <div className="tile-picker-overlay animate-in" onClick={() => setEditingIndex(null)}>
@@ -383,18 +391,6 @@ const CameraCapture: React.FC<Props> = ({ onDetectedTiles, onClose, dora = [] })
             </div>
           </div>
         )}
-          
-          <div className="action-buttons">
-            <button className="cam-btn cancel-btn" onClick={() => { stopCamera(); onClose(); }}>閉じる</button>
-            <button 
-              className="cam-btn confirm-btn" 
-              onClick={handleConfirm}
-              disabled={bufferedTiles.length === 0 && results.length === 0}
-            >
-              {bufferedTiles.length > 0 ? `解析を開始 (${bufferedTiles.length}枚)` : '現在の牌で解析'}
-            </button>
-          </div>
-        </div>
         
         <canvas ref={canvasRef} style={{ display: 'none' }} />
       </div>
