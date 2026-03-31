@@ -22,6 +22,7 @@ class TileRecognizer {
   private lastResults: RecognitionResult[] = []; // 前フレームの認識結果
   private frameCount = 0;
   private confidenceThreshold = 0.30;
+  private learnedTiles: Set<Tile> = new Set(); // ユーザーが手動で教えた牌
 
   async init() {
     if (this.isLoaded) return;
@@ -161,7 +162,12 @@ class TileRecognizer {
         classified = await this.classify(canvas, x, y, w, h);
       }
       
-      if (classified && classified.confidence > adaptiveThreshold) {
+      // 学習済み牌であればしきい値を緩和
+      const finalThreshold = (classified && this.learnedTiles.has(classified.tile)) 
+        ? adaptiveThreshold * 0.7 
+        : adaptiveThreshold;
+      
+      if (classified && classified.confidence > finalThreshold) {
         rawResults.push({
           tile: classified.tile,
           confidence: classified.confidence,
@@ -398,10 +404,50 @@ class TileRecognizer {
     tf.dispose([fullTensor, cropped, standardizedCropped, edgeCropped]);
 
     // 0.3あれば「吸いつく」ように認識されるように調整
-    if (bestTileCandidate && finalConfidence > this.confidenceThreshold) {
-      return { tile: bestTileCandidate, confidence: finalConfidence };
+    // 学習済みの牌は、しきい値をさらに下げ、確信度を底上げ
+    const isLearned = bestTileCandidate && this.learnedTiles.has(bestTileCandidate);
+    const finalThreshold = isLearned ? this.confidenceThreshold * 0.6 : this.confidenceThreshold;
+    const finalConfWithLearned = isLearned ? Math.max(finalConfidence, 0.95) : finalConfidence;
+
+    if (bestTileCandidate && finalConfWithLearned > finalThreshold) {
+      return { tile: bestTileCandidate, confidence: finalConfWithLearned };
     }
     return null;
+  }
+
+  // ユーザーが手動で牌を教える（学習）
+  async updateReference(tile: Tile, canvas: HTMLCanvasElement) {
+    if (!this.isLoaded) return;
+
+    const idx = this.referenceNames.indexOf(tile);
+    if (idx === -1) return;
+
+    const newRef = tf.tidy(() => {
+      const tensor = tf.browser.fromPixels(canvas).toFloat().div(tf.scalar(255.0)) as tf.Tensor3D;
+      const std = this.standardize(tensor);
+      const edg = this.getEdges(tensor);
+      return { std, edg };
+    });
+
+    // テンソルを更新 (scatterNDを使って特定インデックスのみ入れ替え)
+    const oldStd = this.stackedStandardizedRefs!;
+    const oldEdg = this.stackedEdgeRefs!;
+
+    this.stackedStandardizedRefs = tf.tidy(() => {
+      const indices = tf.tensor1d([idx], 'int32');
+      const updates = newRef.std.expandDims(0);
+      return tf.scatterND(indices.expandDims(1), updates, oldStd.shape as any) as tf.Tensor4D;
+    });
+
+    this.stackedEdgeRefs = tf.tidy(() => {
+      const indices = tf.tensor1d([idx], 'int32');
+      const updates = newRef.edg.expandDims(0);
+      return tf.scatterND(indices.expandDims(1), updates, oldEdg.shape as any) as tf.Tensor3D;
+    });
+
+    tf.dispose([oldStd, oldEdg, newRef.std, newRef.edg]);
+    this.learnedTiles.add(tile);
+    console.log(`AI learned: ${tile}`);
   }
 
   // 牌種ごとの物理的な特徴（色・構造）が一致しているかを検証する
@@ -421,6 +467,8 @@ class TileRecognizer {
       
       return { r, g, b, topHalf, bottomHalf };
     });
+
+    if (this.learnedTiles.has(tile)) return 1.0; // 学習済みの牌はヒューリスティックを満点にする
 
     let score = 0.5;
 

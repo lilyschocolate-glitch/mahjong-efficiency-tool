@@ -1397,3 +1397,33 @@ video {
   width: 100%;
   text-align: center;
 }
+
+/* AI学習通知トースト */
+.learning-toast {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(25, 118, 210, 0.95);
+  color: white;
+  padding: 10px 20px;
+  border-radius: 30px;
+  font-size: 14px;
+  font-weight: bold;
+  box-shadow: 0 4px 15px rgba(0,0,0,0.4);
+  z-index: 2000;
+  animation: slideDown 0.3s ease-out, pulseText 2s infinite;
+  border: 1px solid rgba(255,255,255,0.2);
+  white-space: nowrap;
+}
+
+@keyframes slideDown {
+  from { top: -50px; opacity: 0; }
+  to { top: 10px; opacity: 1; }
+}
+
+@keyframes pulseText {
+  0% { transform: translateX(-50%) scale(1); }
+  50% { transform: translateX(-50%) scale(1.02); }
+  100% { transform: translateX(-50%) scale(1); }
+}

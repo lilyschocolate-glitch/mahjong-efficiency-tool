@@ -5,6 +5,7 @@ import type { RecognitionResult } from '../logic/vision';
 import { calculateShanten } from '../logic/mahjong';
 import type { Tile } from '../logic/mahjong';
 import MahjongTile from './MahjongTile';
+import TilePicker from './TilePicker';
 
 interface Props {
   onDetectedTiles: (tiles: string[]) => void;
@@ -26,6 +27,8 @@ const CameraCapture: React.FC<Props> = ({ onDetectedTiles, onClose, dora = [] })
   const [isFlashing, setIsFlashing] = useState(false);
   const [stableCount, setStableCount] = useState(0);
   const [lastDetectedString, setLastDetectedString] = useState("");
+  const [editingIndex, setEditingIndex] = useState<number | null>(null);
+  const [learningMessage, setLearningMessage] = useState<string | null>(null);
 
   const startCamera = async () => {
     try {
@@ -51,6 +54,50 @@ const CameraCapture: React.FC<Props> = ({ onDetectedTiles, onClose, dora = [] })
       setIsActive(false);
     }
   }, []);
+
+  const handleTileSelect = async (tile: Tile) => {
+    if (editingIndex === null) return;
+    
+    // アクティブ・ラーニング (v1.11.0): 
+    // ユーザーが手動で選んだ牌の画像を、AIに「正解」として学習させる
+    if (videoRef.current && canvasRef.current) {
+      const video = videoRef.current;
+      const canvas = document.createElement('canvas');
+      canvas.width = 64;
+      canvas.height = 64;
+      const ctx = canvas.getContext('2d')!;
+
+      // ガイド枠(ROI)の部分を切り出して学習データにする
+      const videoW = video.videoWidth;
+      const videoH = video.videoHeight;
+      const displayW = video.clientWidth;
+      const displayH = video.clientHeight;
+      const scaleX = videoW / displayW;
+      const scaleY = videoH / displayH;
+
+      const roiSize = Math.min(displayW, displayH) * 0.5;
+      const roiX = (displayW - roiSize) / 2;
+      const roiY = (displayH - roiSize) / 2;
+
+      ctx.drawImage(
+        video,
+        roiX * scaleX, roiY * scaleY, roiSize * scaleX, roiSize * scaleY,
+        0, 0, 64, 64
+      );
+
+      // AIに「今のこの画像がこの牌だ」と教える
+      await recognizer.updateReference(tile, canvas);
+      setLearningMessage(`${tile} を学習しました！`);
+      setTimeout(() => setLearningMessage(null), 2000);
+    }
+
+    setBufferedTiles(prev => {
+      const newHand = [...prev];
+      newHand[editingIndex] = tile;
+      return newHand;
+    });
+    setEditingIndex(null);
+  };
 
   const handleAddToBuffer = () => {
     if (results.length > 0) {
@@ -79,9 +126,7 @@ const CameraCapture: React.FC<Props> = ({ onDetectedTiles, onClose, dora = [] })
     setBufferedTiles(prev => prev.filter((_, i) => i !== idx));
   };
   
-  // Initialize recognizer & camera parallelly
   useEffect(() => {
-    // 映像を真っ先に起動する（ユーザーを待たせない）
     startCamera();
     
     const init = async () => {
@@ -99,7 +144,6 @@ const CameraCapture: React.FC<Props> = ({ onDetectedTiles, onClose, dora = [] })
     return () => stopCamera();
   }, [stopCamera]);
 
-  // Detection Loop
   useEffect(() => {
     let animationId: number;
     const detect = async () => {
@@ -121,7 +165,6 @@ const CameraCapture: React.FC<Props> = ({ onDetectedTiles, onClose, dora = [] })
     return () => cancelAnimationFrame(animationId);
   }, [isActive, isInitializing]);
 
-  // Live Analysis & Auto-Add Logic
   useEffect(() => {
     const currentLiveTiles = results.map((r: RecognitionResult) => r.tile as Tile);
     const combinedTiles = [...bufferedTiles, ...currentLiveTiles].slice(0, 14);
@@ -133,7 +176,6 @@ const CameraCapture: React.FC<Props> = ({ onDetectedTiles, onClose, dora = [] })
       setLiveShanten(null);
     }
 
-    // オートスキャンロジック: 牌が安定して1.5秒程度（約10フレーム）静止していたら自動追加
     const currentString = currentLiveTiles.sort().join(',');
     if (currentLiveTiles.length > 0 && currentString === lastDetectedString) {
       if (stableCount > 8 && bufferedTiles.length < 14) {
@@ -153,7 +195,6 @@ const CameraCapture: React.FC<Props> = ({ onDetectedTiles, onClose, dora = [] })
     const canvas = overlayRef.current;
     const video = videoRef.current;
     
-    // Sync size
     const rect = video.getBoundingClientRect();
     canvas.width = rect.width;
     canvas.height = rect.height;
@@ -162,19 +203,17 @@ const CameraCapture: React.FC<Props> = ({ onDetectedTiles, onClose, dora = [] })
     if (!ctx) return;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    // 画面(canvas)と動画(native)の比率から、正確なスケールを算出
     const scaleX = canvas.width / video.videoWidth;
     const scaleY = canvas.height / video.videoHeight;
     
-    // object-fit: cover を考慮したスケーリング
     const scale = Math.max(scaleX, scaleY);
     const offsetX = (video.videoWidth * scale - canvas.width) / 2;
     const offsetY = (video.videoHeight * scale - canvas.height) / 2;
 
-    ctx.strokeStyle = '#22c55e'; // さわやかな緑色
-    ctx.lineWidth = 6; // さらに太くして視認性をアップ
+    ctx.strokeStyle = '#22c55e';
+    ctx.lineWidth = 6;
     ctx.lineJoin = 'round';
-    ctx.shadowBlur = 8; // 光彩エフェクト
+    ctx.shadowBlur = 8;
     ctx.shadowColor = 'rgba(34, 197, 94, 0.6)';
     
     ctx.fillStyle = '#22c55e';
@@ -187,13 +226,10 @@ const CameraCapture: React.FC<Props> = ({ onDetectedTiles, onClose, dora = [] })
       const sw = w * scale;
       const sh = h * scale;
 
-      // 確信度が低いものは半透明にする
       ctx.globalAlpha = det.confidence > 0.5 ? 1.0 : 0.6;
 
-      // 角丸の矩形を描画
       drawRoundedRect(ctx, sx, sy, sw, sh, 4);
       
-      // ラベル背景
       const confidencePercent = Math.round(det.confidence * 100);
       const label = `${det.tile} (${confidencePercent}%)`;
       const metrics = ctx.measureText(label);
@@ -227,7 +263,7 @@ const CameraCapture: React.FC<Props> = ({ onDetectedTiles, onClose, dora = [] })
     <div className={`camera-overlay ${isFlashing ? 'flashing' : ''}`}>
       <div className="camera-container">
         <div className="camera-header">
-          <h3>AI 牌認識カメラ</h3>
+          <h1>🀄️ 多面待ちくん <span className="version-tag">v1.11.0</span></h1>
           <button className="close-btn" onClick={(e) => { 
             e.stopPropagation();
             stopCamera(); 
@@ -235,7 +271,6 @@ const CameraCapture: React.FC<Props> = ({ onDetectedTiles, onClose, dora = [] })
           }}>✕</button>
         </div>
 
-        {/* ライブ認識トレイを上部に配置: 何を読み取っているか一目でわかる */}
         <div className="live-detection-tray-top">
           {results.length > 0 ? (
             <div className="live-tiles-row">
@@ -268,7 +303,6 @@ const CameraCapture: React.FC<Props> = ({ onDetectedTiles, onClose, dora = [] })
           <video ref={videoRef} autoPlay playsInline muted />
           <canvas ref={overlayRef} className="detection-overlay" />
           
-          {/* AI起動中の控えめなインジケーター */}
           {isInitializing && (
             <div className="minimal-status-loading">
               <div className="pulse-dot"></div>
@@ -276,7 +310,6 @@ const CameraCapture: React.FC<Props> = ({ onDetectedTiles, onClose, dora = [] })
             </div>
           )}
 
-          {/* 14枚揃った時のオーバーレイ */}
           {bufferedTiles.length === 14 && (
             <div className="completion-overlay">
               <div className="completion-card">
@@ -294,29 +327,52 @@ const CameraCapture: React.FC<Props> = ({ onDetectedTiles, onClose, dora = [] })
               <div className="guide-corners top-right"></div>
               <div className="guide-corners bottom-left"></div>
               <div className="guide-corners bottom-right"></div>
-              <div className="guide-text">牌に近づけて、左から右へパンしながらスキャンしてください</div>
+              <p>牌に近づけて、左から右へパンしながらスキャンしてください。</p>
+              {learningMessage && (
+                <div className="learning-toast">
+                  ✨ {learningMessage} (AIがあなたの環境を学習中)
+                </div>
+              )}
             </div>
 
           {error && <div className="camera-error">{error}</div>}
         </div>
 
         <div className="camera-controls">
-          <div className="buffered-tiles-preview">
-            <div className="section-header">
-              <span className="label">スキャン済み: {bufferedTiles.length}/14枚</span>
-              {bufferedTiles.length > 0 && <button className="text-btn" onClick={clearBuffer}>クリア</button>}
-            </div>
-            <div className="mini-tiles-row">
-              {bufferedTiles.map((tile, i) => (
-                <div key={`${tile}-${i}`} className="mini-tile-wrapper" onClick={() => handleRemoveBuffered(i)}>
-                  <MahjongTile tile={tile} size="small" />
-                </div>
-              ))}
-              {[...Array(Math.max(0, 14 - bufferedTiles.length))].map((_, i) => (
-                <div key={`empty-${i}`} className="mini-tile-empty" />
-              ))}
+          <div className="buffered-tiles-section">
+          <div className="section-header">
+            <h4>読み取り済みの牌 ({bufferedTiles.length}/14)</h4>
+            <div className="shanten-badge">
+              {liveShanten === 0 ? "テンパイ" : liveShanten === null ? "-" : `${liveShanten}向聴`}
             </div>
           </div>
+          <div className="buffered-tiles-grid">
+            {bufferedTiles.map((tile, idx) => (
+              <div key={idx} className="buffered-tile-wrapper" onClick={() => setEditingIndex(idx)}>
+                <MahjongTile tile={tile} size="small" />
+                <button className="remove-tile-btn" onClick={(e) => {
+                  e.stopPropagation();
+                  handleRemoveBuffered(idx);
+                }}>✕</button>
+              </div>
+            ))}
+            {bufferedTiles.length < 14 && (
+              <div className="empty-tile-slot"></div>
+            )}
+          </div>
+        </div>
+
+        {editingIndex !== null && (
+          <div className="tile-picker-overlay animate-in" onClick={() => setEditingIndex(null)}>
+            <div className="tile-picker-container" onClick={e => e.stopPropagation()}>
+              <div className="picker-header-row">
+                <h4>牌を修正 (AIに学習させる)</h4>
+                <button className="close-picker" onClick={() => setEditingIndex(null)}>✕</button>
+              </div>
+              <TilePicker onTileSelect={handleTileSelect} />
+            </div>
+          </div>
+        )}
           
           <div className="action-buttons">
             <button className="cam-btn cancel-btn" onClick={() => { stopCamera(); onClose(); }}>閉じる</button>
