@@ -148,8 +148,10 @@ class TileRecognizer {
       const ratio = w / h;
       if (ratio < 0.3 || ratio > 1.8) continue; 
       
-      // 牌としての適切なサイズ（ROI内の1/40〜1/4程度）かチェック
-      if (w < roiW / 40 || w > roiW / 4) continue;
+      // シングル・ターゲット・ブースト (v1.10.0): 
+      // 候補が極端に少ない（ROI内に大きな1枚のみ）場合、判定への疑い（しきい値）を緩和
+      const isSingleLarge = predictions.length === 1 && w > roiW * 0.2;
+      const adaptiveThreshold = isSingleLarge ? this.confidenceThreshold * 0.8 : this.confidenceThreshold;
 
       const cached = this.lastResults.find(r => this.iou(r.bbox, [x + roiX, y + roiY, w, h]) > 0.7);
       let classified: ClassificationResult | null;
@@ -159,7 +161,7 @@ class TileRecognizer {
         classified = await this.classify(canvas, x, y, w, h);
       }
       
-      if (classified && classified.confidence > this.confidenceThreshold) {
+      if (classified && classified.confidence > adaptiveThreshold) {
         rawResults.push({
           tile: classified.tile,
           confidence: classified.confidence,
@@ -405,6 +407,8 @@ class TileRecognizer {
   // 牌種ごとの物理的な特徴（色・構造）が一致しているかを検証する
   private async getHeuristicScore(cropped: tf.Tensor3D, tile: Tile): Promise<number> {
     const type = tile[0]; // 'm', 's', 'p', 'z'
+    const numMatch = tile.match(/\d+/);
+    const num = numMatch ? parseInt(numMatch[0]) : 0;
 
     const info = await tf.tidy(() => {
       const rgb = cropped.unstack(2);
@@ -412,27 +416,26 @@ class TileRecognizer {
       const g = rgb[1].mean().arraySync() as number;
       const b = rgb[2].mean().arraySync() as number;
       
-      // 上部（文字・記号エリア）と下部（萬・余白等）のコントラスト
       const topHalf = cropped.slice([0, 0, 0], [32, 64, 3]).mean().arraySync() as number;
       const bottomHalf = cropped.slice([32, 0, 0], [32, 64, 3]).mean().arraySync() as number;
       
       return { r, g, b, topHalf, bottomHalf };
     });
 
-    let score = 0.5; // デフォルトスコア
+    let score = 0.5;
 
     if (type === 'm') {
-      // 萬子: 赤い要素（漢数字）が上部にあるか。判定条件を緩和 (1.1 -> 1.02)
       if (info.r > info.g * 1.02 && info.r > info.b * 1.02) score += 0.3;
-      if (info.topHalf < info.bottomHalf) score += 0.2; // 文字部分の密度
+      if (info.topHalf < info.bottomHalf) score += 0.2; 
     } else if (type === 's') {
-      // 索子: 緑色の要素（竹）が支配的か。判定条件を緩和 (1.05 -> 1.02)
       if (info.g > info.r * 1.02 && info.g > info.b * 1.02) score += 0.4;
     } else if (type === 'p') {
-      // 筒子: 青/緑の円形パターン。平均的な輝度のバランス
-      if (Math.abs(info.r - info.b) < 0.1) score += 0.3;
+      if (num === 1) {
+        if (info.r > info.g * 1.1 && info.r > info.b * 1.1) score += 0.4; 
+      } else {
+        if (Math.abs(info.r - info.b) < 0.1) score += 0.3;
+      }
     } else if (type === 'z') {
-      // 字牌: 背景の白さが際立っているか
       if (info.r > 0.7 && info.g > 0.7 && info.b > 0.7) score += 0.2;
     }
 
