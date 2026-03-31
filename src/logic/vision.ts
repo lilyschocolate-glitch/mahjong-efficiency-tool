@@ -422,12 +422,12 @@ class TileRecognizer {
     let score = 0.5; // デフォルトスコア
 
     if (type === 'm') {
-      // 萬子: 赤い要素（漢数字）が上部にあるか、全体的に赤みが強いか
-      if (info.r > info.g * 1.1 && info.r > info.b * 1.1) score += 0.3;
+      // 萬子: 赤い要素（漢数字）が上部にあるか。判定条件を緩和 (1.1 -> 1.02)
+      if (info.r > info.g * 1.02 && info.r > info.b * 1.02) score += 0.3;
       if (info.topHalf < info.bottomHalf) score += 0.2; // 文字部分の密度
     } else if (type === 's') {
-      // 索子: 緑色の要素（竹）が支配的か
-      if (info.g > info.r * 1.05 && info.g > info.b * 1.05) score += 0.4;
+      // 索子: 緑色の要素（竹）が支配的か。判定条件を緩和 (1.05 -> 1.02)
+      if (info.g > info.r * 1.02 && info.g > info.b * 1.02) score += 0.4;
     } else if (type === 'p') {
       // 筒子: 青/緑の円形パターン。平均的な輝度のバランス
       if (Math.abs(info.r - info.b) < 0.1) score += 0.3;
