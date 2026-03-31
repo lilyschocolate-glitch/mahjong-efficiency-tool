@@ -118,8 +118,14 @@ class TileRecognizer {
       if (pred.score < 0.10) continue; 
 
       const [x, y, w, h] = pred.bbox;
+      
+      // 巨大枠フィルター (v1.7.3): 画面の半分以上（面積で20%以上または幅/高が60%以上）を占める枠はノイズとして無視
+      const screenArea = videoElement.videoWidth * videoElement.videoHeight;
+      const boxArea = w * h;
+      if (boxArea > screenArea * 0.25 || w > videoElement.videoWidth * 0.6 || h > videoElement.videoHeight * 0.6) continue;
+      
       const ratio = w / h;
-      if (ratio < 0.2 || ratio > 2.0) continue; // アスペクト比を少し広く許可（斜め対応）
+      if (ratio < 0.2 || ratio > 2.0) continue; 
 
       if (seenBoxes.some(box => this.iou(box, pred.bbox as [number, number, number, number]) > 0.4)) continue;
       seenBoxes.push(pred.bbox as [number, number, number, number]);
