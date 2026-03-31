@@ -87,10 +87,11 @@ const CameraCapture: React.FC<Props> = ({ onDetectedTiles, onClose, dora = [] })
     const init = async () => {
       try {
         await recognizer.init();
-        setIsInitializing(false);
       } catch (e) {
         console.error("Recognizer init failed", e);
         setError("AIモデルの初期化に失敗しました。");
+      } finally {
+        setIsInitializing(false);
       }
     };
     init();
@@ -247,8 +248,7 @@ const CameraCapture: React.FC<Props> = ({ onDetectedTiles, onClose, dora = [] })
             </div>
           ) : (
             <div className={`status-pill ${isInitializing ? 'loading' : 'scanning'}`}>
-              <span className="dot"></span>
-              {isInitializing ? 'AIモデル準備中...' : 'スキャン中...'}
+              {isInitializing ? 'AIモデル準備中...' : `スキャン中... (候補: ${results.length})`}
             </div>
           )}
         </div>

@@ -24,9 +24,20 @@ class TileRecognizer {
 
   async init() {
     if (this.isLoaded) return;
-    this.model = await cocoSsd.load();
-    await this.loadReferences();
-    this.isLoaded = true;
+    try {
+      await tf.setBackend('webgl');
+      await tf.ready();
+      this.model = await cocoSsd.load();
+      await this.loadReferences();
+      this.isLoaded = true;
+    } catch (e) {
+      console.error("Tensorflow init failed, falling back to CPU", e);
+      await tf.setBackend('cpu');
+      await tf.ready();
+      this.model = await cocoSsd.load();
+      await this.loadReferences();
+      this.isLoaded = true;
+    }
   }
 
   private async loadReferences() {
@@ -122,7 +133,7 @@ class TileRecognizer {
         classified = await this.classify(videoElement, x, y, w, h);
       }
       
-      if (classified && classified.confidence > 0.35) {
+      if (classified && classified.confidence > 0.30) {
         results.push({
           tile: classified.tile,
           confidence: classified.confidence,
@@ -312,7 +323,7 @@ class TileRecognizer {
     tf.dispose([fullTensor, cropped, standardizedCropped, edgeCropped]);
 
     // 0.3あれば「吸いつく」ように認識されるように調整
-    if (bestTileCandidate && confidence > 0.3) {
+    if (bestTileCandidate && confidence > 0.30) {
       return { tile: bestTileCandidate, confidence };
     }
     return null;
