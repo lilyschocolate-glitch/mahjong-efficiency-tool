@@ -21,6 +21,7 @@ class TileRecognizer {
   private isLoaded = false;
   private lastResults: RecognitionResult[] = []; // 前フレームの認識結果
   private frameCount = 0;
+  private confidenceThreshold = 0.30;
 
   async init() {
     if (this.isLoaded) return;
@@ -158,7 +159,7 @@ class TileRecognizer {
         classified = await this.classify(canvas, x, y, w, h);
       }
       
-      if (classified && classified.confidence > 0.30) {
+      if (classified && classified.confidence > this.confidenceThreshold) {
         rawResults.push({
           tile: classified.tile,
           confidence: classified.confidence,
@@ -332,8 +333,6 @@ class TileRecognizer {
       };
     });
 
-    // --- 一括ベクトル判定 (v1.7.1 新ロジック) ---
-    // 44枚すべての牌との誤差を同時に計算し、await を一回に激減
     const { bestIdx, confidence } = await (async () => {
       const combinedErrorTensor = tf.tidy(() => {
         // Pixel誤差 (MSE) [44]
@@ -367,8 +366,12 @@ class TileRecognizer {
 
     let bestTileCandidate: Tile | null = this.referenceNames[bestIdx];
 
+    // --- 牌種固有の物理的特徴検証 (v1.9.0 Heuristic Check) ---
+    const heuristicScore = await this.getHeuristicScore(cropped, bestTileCandidate);
+    const finalConfidence = confidence * 0.7 + heuristicScore * 0.3;
+
     // 赤ドラ判定
-    if (bestTileCandidate && ['m5', 'p5', 's5'].includes(bestTileCandidate as string) && confidence > 0.3) {
+    if (bestTileCandidate && ['m5', 'p5', 's5'].includes(bestTileCandidate as string) && finalConfidence > 0.25) {
       const isRed = await (async () => {
         const factorTensor = tf.tidy(() => {
           const redMask = cropped.slice([10, 10], [44, 44]).unstack(2)[0];
@@ -393,10 +396,47 @@ class TileRecognizer {
     tf.dispose([fullTensor, cropped, standardizedCropped, edgeCropped]);
 
     // 0.3あれば「吸いつく」ように認識されるように調整
-    if (bestTileCandidate && confidence > 0.30) {
-      return { tile: bestTileCandidate, confidence };
+    if (bestTileCandidate && finalConfidence > this.confidenceThreshold) {
+      return { tile: bestTileCandidate, confidence: finalConfidence };
     }
     return null;
+  }
+
+  // 牌種ごとの物理的な特徴（色・構造）が一致しているかを検証する
+  private async getHeuristicScore(cropped: tf.Tensor3D, tile: Tile): Promise<number> {
+    const type = tile[0]; // 'm', 's', 'p', 'z'
+
+    const info = await tf.tidy(() => {
+      const rgb = cropped.unstack(2);
+      const r = rgb[0].mean().arraySync() as number;
+      const g = rgb[1].mean().arraySync() as number;
+      const b = rgb[2].mean().arraySync() as number;
+      
+      // 上部（文字・記号エリア）と下部（萬・余白等）のコントラスト
+      const topHalf = cropped.slice([0, 0, 0], [32, 64, 3]).mean().arraySync() as number;
+      const bottomHalf = cropped.slice([32, 0, 0], [32, 64, 3]).mean().arraySync() as number;
+      
+      return { r, g, b, topHalf, bottomHalf };
+    });
+
+    let score = 0.5; // デフォルトスコア
+
+    if (type === 'm') {
+      // 萬子: 赤い要素（漢数字）が上部にあるか、全体的に赤みが強いか
+      if (info.r > info.g * 1.1 && info.r > info.b * 1.1) score += 0.3;
+      if (info.topHalf < info.bottomHalf) score += 0.2; // 文字部分の密度
+    } else if (type === 's') {
+      // 索子: 緑色の要素（竹）が支配的か
+      if (info.g > info.r * 1.05 && info.g > info.b * 1.05) score += 0.4;
+    } else if (type === 'p') {
+      // 筒子: 青/緑の円形パターン。平均的な輝度のバランス
+      if (Math.abs(info.r - info.b) < 0.1) score += 0.3;
+    } else if (type === 'z') {
+      // 字牌: 背景の白さが際立っているか
+      if (info.r > 0.7 && info.g > 0.7 && info.b > 0.7) score += 0.2;
+    }
+
+    return Math.min(1.0, score);
   }
 }
 
