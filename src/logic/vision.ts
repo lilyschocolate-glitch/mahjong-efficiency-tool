@@ -103,98 +103,162 @@ class TileRecognizer {
   async recognize(videoElement: HTMLVideoElement): Promise<RecognitionResult[]> {
     if (!this.model) return [];
 
-    let predictions = await this.model.detect(videoElement);
+    // --- ROI (Region of Interest) 設定 (v1.8.0) ---
+    // ガイド枠に対応する中央領域のみを解析（背景ノイズを100%カット）
+    const vw = videoElement.videoWidth;
+    const vh = videoElement.videoHeight;
+    const roiW = vw * 0.85; // UIのguide-frame 85%に同期
+    const roiH = vh * 0.35; // guide-frame 25%より少し広めに
+    const roiX = (vw - roiW) / 2;
+    const roiY = (vh - roiH) / 2;
+
+    // ROI領域のみを切り出したテンソルでAIに入力
+    const roiTensor = tf.tidy(() => {
+      const pixels = tf.browser.fromPixels(videoElement);
+      const crop = tf.image.cropAndResize(
+        pixels.expandDims(0) as tf.Tensor4D,
+        [[roiY / vh, roiX / vw, (roiY + roiH) / vh, (roiX + roiW) / vw]],
+        [0],
+        [roiH, roiW]
+      );
+      return crop.squeeze([0]).toInt() as tf.Tensor3D;
+    });
+
+    const canvas = document.createElement('canvas');
+    canvas.width = roiW;
+    canvas.height = roiH;
+    await tf.browser.toPixels(roiTensor, canvas);
+    roiTensor.dispose();
+
+    let predictions = await this.model.detect(canvas as any);
     
-    // AIモデル（coco-ssd）が牌を1つも見つけられなかった場合のフォールバック
-    if (predictions.length === 0 || predictions.every((p: any) => p.score < 0.25)) {
-      const fallbackBoxes = await this.detectWhiteBlobs(videoElement);
+    // フォールバック（白牌抽出）もROI内でのみ実行
+    if (predictions.length === 0 || predictions.every((p: any) => p.score < 0.20)) {
+      const fallbackBoxes = await this.detectWhiteBlobs(canvas as any);
       predictions = [...predictions, ...fallbackBoxes];
     }
 
-    const results: RecognitionResult[] = [];
-    const seenBoxes: [number, number, number, number][] = [];
+    const rawResults: RecognitionResult[] = [];
 
     for (const pred of predictions) {
       if (pred.score < 0.10) continue; 
 
       const [x, y, w, h] = pred.bbox;
-      
-      // 巨大枠フィルター (v1.7.3): 画面の半分以上（面積で20%以上または幅/高が60%以上）を占める枠はノイズとして無視
-      const screenArea = videoElement.videoWidth * videoElement.videoHeight;
-      const boxArea = w * h;
-      if (boxArea > screenArea * 0.25 || w > videoElement.videoWidth * 0.6 || h > videoElement.videoHeight * 0.6) continue;
-      
       const ratio = w / h;
-      if (ratio < 0.2 || ratio > 2.0) continue; 
-
-      if (seenBoxes.some(box => this.iou(box, pred.bbox as [number, number, number, number]) > 0.4)) continue;
-      seenBoxes.push(pred.bbox as [number, number, number, number]);
-
-      let classified: ClassificationResult | null = null;
-      const cached = this.lastResults.find(prev => this.iou(prev.bbox, pred.bbox as [number, number, number, number]) > 0.7);
+      if (ratio < 0.3 || ratio > 1.8) continue; 
       
-      if (cached && this.frameCount % 10 !== 0) { // キャッシュ期間を少し延長
+      // 牌としての適切なサイズ（ROI内の1/40〜1/4程度）かチェック
+      if (w < roiW / 40 || w > roiW / 4) continue;
+
+      const cached = this.lastResults.find(r => this.iou(r.bbox, [x + roiX, y + roiY, w, h]) > 0.7);
+      let classified: ClassificationResult | null;
+      if (cached && this.frameCount % 10 !== 0) {
         classified = { tile: cached.tile, confidence: cached.confidence };
       } else {
-        classified = await this.classify(videoElement, x, y, w, h);
+        classified = await this.classify(canvas, x, y, w, h);
       }
       
       if (classified && classified.confidence > 0.30) {
-        results.push({
+        rawResults.push({
           tile: classified.tile,
           confidence: classified.confidence,
-          bbox: [x, y, w, h] as [number, number, number, number]
+          // 座標を全体画面（video）基準に戻す
+          bbox: [x + roiX, y + roiY, w, h] as [number, number, number, number]
         });
       }
     }
 
+    // --- NMS (Non-Maximum Suppression) 実装 (v1.8.0) ---
+    // 重なり合った判定のうち、最も「自信がある」牌だけを生き残らせる
+    const results = this.applyNMS(rawResults);
+
     this.frameCount++;
     this.lastResults = results;
 
-    // X座標でソートして左から順に並べる
     return results.sort((a, b) => a.bbox[0] - b.bbox[0]);
   }
 
+  // 重複判定を除去し、各牌に対して最善の枠のみを残す
+  private applyNMS(results: RecognitionResult[]): RecognitionResult[] {
+    const sorted = [...results].sort((a, b) => b.confidence - a.confidence);
+    const selected: RecognitionResult[] = [];
+    const usedIndices = new Set<number>();
+
+    for (let i = 0; i < sorted.length; i++) {
+      if (usedIndices.has(i)) continue;
+
+      selected.push(sorted[i]);
+
+      for (let j = i + 1; j < sorted.length; j++) {
+        if (usedIndices.has(j)) continue;
+
+        // IOUが高い（重なりが大きい）場合は、片方を消去
+        if (this.iou(sorted[i].bbox, sorted[j].bbox) > 0.3) {
+          usedIndices.add(j);
+        }
+      }
+    }
+    return selected;
+  }
+
     // AIが見逃した「白い矩形（牌）」を、幾何学的な特徴で抽出するバックアップロジック
-  private async detectWhiteBlobs(source: HTMLVideoElement): Promise<any[]> {
+  private async detectWhiteBlobs(source: HTMLCanvasElement): Promise<any[]> {
     const pixels = tf.browser.fromPixels(source);
-    const tensor = tf.image.resizeBilinear(pixels, [240, 480]);
+    // 高解像度のままROI内を精査
+    const tensor = tf.image.resizeBilinear(pixels, [180, 480]);
     
-    // 非同期で平均輝度などを取得
     const avgBrightnessTensor = tensor.mean();
     const avgBrightnessArray = await avgBrightnessTensor.array() as number;
 
-    const threshold = Math.max(120, avgBrightnessArray * 1.3);
+    // 白色の分布を抽出
+    const threshold = Math.max(130, avgBrightnessArray * 1.2);
     const whiteMask = tensor.min(2).greater(tf.scalar(threshold)); 
     
     const boxes: any[] = [];
-    const gridH = 30;
-    const gridW = 60;
-    const cellH = 240 / gridH;
+    const gridH = 15;
+    const gridW = 40;
+    const cellH = 180 / gridH;
     const cellW = 480 / gridW;
     
-    const scaleY = source.videoHeight / 240;
-    const scaleX = source.videoWidth / 480;
+    const scaleY = source.height / 180;
+    const scaleX = source.width / 480;
 
     const maskData = await whiteMask.array() as number[][];
-    
+    const visited = new Array(gridH).fill(0).map(() => new Array(gridW).fill(false));
+
+    // Connected Components Grouping (隣接する白セルを統合)
     for (let i = 0; i < gridH; i++) {
       for (let j = 0; j < gridW; j++) {
-        // マスクデータの集計もなるべく効率化（CPUで行うため、全体を先に取得して走査）
-        let sum = 0;
-        for (let y = i * cellH; y < (i + 1) * cellH; y++) {
-          for (let x = j * cellW; x < (j + 1) * cellW; x++) {
-            if (maskData[Math.floor(y)][Math.floor(x)]) sum++;
+        if (maskData[i][j] && !visited[i][j]) {
+          // BFSで塊を抽出
+          let minR = i, maxR = i, minC = j, maxC = j;
+          const queue = [[i, j]];
+          visited[i][j] = true;
+
+          while (queue.length > 0) {
+            const [r, c] = queue.shift()!;
+            minR = Math.min(minR, r); maxR = Math.max(maxR, r);
+            minC = Math.min(minC, c); maxC = Math.max(maxC, c);
+
+            [[r-1, c], [r+1, c], [r, c-1], [r, c+1]].forEach(([nr, nc]) => {
+              if (nr >= 0 && nr < gridH && nc >= 0 && nc < gridW && maskData[nr][nc] && !visited[nr][nc]) {
+                visited[nr][nc] = true;
+                queue.push([nr, nc]);
+              }
+            });
           }
-        }
-        const density = sum / (cellH * cellW);
-        
-        if (density > 0.40) {
-          boxes.push({
-            bbox: [j * cellW * scaleX, i * cellH * scaleY, cellW * scaleX, cellH * scaleY],
-            score: 0.15,
-            class: 'tile_candidate'
-          });
+
+          const w = (maxC - minC + 1) * cellW * scaleX;
+          const h = (maxR - minR + 1) * cellH * scaleY;
+          
+          // 塊が牌のサイズ感にフィットするかチェック
+          if (w > source.width / 50 && h > source.height / 20) {
+            boxes.push({
+              bbox: [minC * cellW * scaleX, minR * cellH * scaleY, w, h],
+              score: 0.15,
+              class: 'tile_candidate'
+            });
+          }
         }
       }
     }
