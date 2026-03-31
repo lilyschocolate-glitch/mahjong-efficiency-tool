@@ -599,13 +599,14 @@ video {
 }
 
 .camera-controls {
-  padding: 20px 20px calc(20px + env(safe-area-inset-bottom, 20px)); /* iPhone のバー対応 */
-  background: rgba(15, 23, 42, 0.95);
-  backdrop-filter: blur(10px);
+  padding: 12px 16px env(safe-area-inset-bottom, 16px);
+  background: rgba(15, 23, 42, 0.98);
+  backdrop-filter: blur(15px);
   display: flex;
-  justify-content: space-between;
-  align-items: center;
+  flex-direction: column;
+  gap: 12px;
   border-top: 1px solid rgba(255, 255, 255, 0.1);
+  z-index: 2000;
 }
 
 .camera-btn {
@@ -1458,4 +1459,51 @@ video {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+/* 横スクロール形式のスキャン済みリスト (v1.11.2) */
+.buffered-tiles-scroll-row {
+  display: flex;
+  gap: 10px;
+  overflow-x: auto;
+  padding: 8px 4px;
+  scrollbar-width: none; /* Firefox */
+}
+
+.buffered-tiles-scroll-row::-webkit-scrollbar {
+  display: none; /* Chrome, Safari */
+}
+
+.buffered-tiles-scroll-row .buffered-tile-wrapper {
+  flex-shrink: 0;
+  position: relative;
+  width: 40px;
+  height: 54px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.buffered-tiles-scroll-row .empty-tile-slot {
+  flex-shrink: 0;
+  width: 40px;
+  height: 54px;
+  border: 1px dashed rgba(255, 255, 255, 0.2);
+  border-radius: 6px;
+}
+
+.text-btn {
+  background: none;
+  border: none;
+  color: #94a3b8;
+  font-size: 11px;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.text-btn:hover {
+  color: #f43f5e;
 }

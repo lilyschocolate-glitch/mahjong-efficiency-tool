@@ -263,7 +263,7 @@ const CameraCapture: React.FC<Props> = ({ onDetectedTiles, onClose, dora = [] })
     <div className={`camera-overlay ${isFlashing ? 'flashing' : ''}`}>
       <div className="camera-container">
         <div className="camera-header">
-          <h3>AI 牌認識カメラ <span className="version-tag">v1.11.1</span></h3>
+          <h1>🀄️ 多面待ちくん <span className="version-tag">v1.11.2</span></h1>
           <div className="header-actions">
             <button className="reset-learning-btn" onClick={(e) => {
               e.stopPropagation();
@@ -350,27 +350,27 @@ const CameraCapture: React.FC<Props> = ({ onDetectedTiles, onClose, dora = [] })
 
         <div className="camera-controls">
           <div className="buffered-tiles-section">
-          <div className="section-header">
-            <h4>読み取り済みの牌 ({bufferedTiles.length}/14)</h4>
-            <div className="shanten-badge">
-              {liveShanten === 0 ? "テンパイ" : liveShanten === null ? "-" : `${liveShanten}向聴`}
+            <div className="section-header">
+              <span className="label">スキャン済み: {bufferedTiles.length}/14枚</span>
+              {bufferedTiles.length > 0 && (
+                <button className="text-btn" onClick={(e) => { e.stopPropagation(); clearBuffer(); }}>全消去</button>
+              )}
+            </div>
+            <div className="buffered-tiles-scroll-row">
+              {bufferedTiles.map((tile, idx) => (
+                <div key={idx} className="buffered-tile-wrapper" onClick={() => setEditingIndex(idx)}>
+                  <MahjongTile tile={tile} size="small" />
+                  <button className="remove-tile-btn" onClick={(e) => {
+                    e.stopPropagation();
+                    handleRemoveBuffered(idx);
+                  }}>✕</button>
+                </div>
+              ))}
+              {[...Array(Math.max(0, 14 - bufferedTiles.length))].map((_, i) => (
+                <div key={`empty-${i}`} className="empty-tile-slot"></div>
+              ))}
             </div>
           </div>
-          <div className="buffered-tiles-grid">
-            {bufferedTiles.map((tile, idx) => (
-              <div key={idx} className="buffered-tile-wrapper" onClick={() => setEditingIndex(idx)}>
-                <MahjongTile tile={tile} size="small" />
-                <button className="remove-tile-btn" onClick={(e) => {
-                  e.stopPropagation();
-                  handleRemoveBuffered(idx);
-                }}>✕</button>
-              </div>
-            ))}
-            {bufferedTiles.length < 14 && (
-              <div className="empty-tile-slot"></div>
-            )}
-          </div>
-        </div>
 
         {editingIndex !== null && (
           <div className="tile-picker-overlay animate-in" onClick={() => setEditingIndex(null)}>
